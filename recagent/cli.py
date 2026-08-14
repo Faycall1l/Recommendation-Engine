@@ -118,6 +118,85 @@ def _cmd_chat(args: argparse.Namespace) -> None:
         handle(line)
 
 
+def _cmd_eval(args: argparse.Namespace) -> None:
+    import asyncio
+
+    from recagent.agent import RecAgent
+    from recagent.config import load_llm_config
+    from recagent.evaluate import (
+        agent_baseline,
+        build_test_items,
+        cf_baseline,
+        cf_lists,
+        constraint_eval,
+        genre_share,
+        save_report,
+    )
+    from recagent.state import load_state
+    from recagent.tools import ToolRegistry
+
+    state = load_state(args.artifacts)
+    test_items = build_test_items(
+        state, args.data, min_interactions=args.min_interactions, seed=args.seed
+    )
+    if args.sample:
+        test_items = {u: test_items[u] for u in sorted(test_items)[: args.sample]}
+
+    cf = cf_baseline(state, test_items)
+    print(f"CF baseline (ALS) over {cf['n_users']} users")
+    for k in cf["hr"]:
+        print(f"  HR@{k:<2} {cf['hr'][k]:.4f}   NDCG@{k:<2} {cf['ndcg'][k]:.4f}")
+
+    report = {"dataset": "ml-100k", "cf_baseline": cf, "agent": None}
+    if args.agent:
+        config = load_llm_config()
+        if not config.enabled:
+            raise SystemExit(
+                "agent disabled — set ATHAR_AGENT__ENABLED=true and point "
+                "ATHAR_AGENT__VLLM__* at your vLLM endpoint"
+            )
+        deps = ToolRegistry(state)
+        agent = RecAgent(config, state)
+        if args.genre:
+            users = list(test_items)
+            agent_lists, details = asyncio.run(
+                constraint_eval(
+                    agent, deps, users, constraint=args.genre, k=args.k, concurrency=args.parallel
+                )
+            )
+            cf_top = cf_lists(state, users, n=args.k)
+            agent_share = genre_share(state, agent_lists)
+            cf_share = genre_share(state, cf_top)
+            print(f"\nConstraint compliance ({args.genre}) — CF is genre-blind")
+            print(f"  agent genre precision: {agent_share.get(args.genre.lower(), 0.0):.4f}")
+            print(f"  CF    genre precision: {cf_share.get(args.genre.lower(), 0.0):.4f}")
+            report["constraint"] = {
+                "genre": args.genre,
+                "agent_precision": agent_share.get(args.genre.lower(), 0.0),
+                "cf_precision": cf_share.get(args.genre.lower(), 0.0),
+                "per_user": [
+                    {"user_id": u, "cf": ids, "agent": agent_lists.get(u, [])} for u, ids in details
+                ],
+            }
+        else:
+            agent_metrics, details = asyncio.run(
+                agent_baseline(agent, deps, test_items, k=args.k, concurrency=args.parallel)
+            )
+            report["agent"] = agent_metrics
+            report["per_user"] = details
+            print(f"\nAgent (Gemma-4 via pydantic-ai) over {agent_metrics['n_users']} users")
+            for k in agent_metrics["hr"]:
+                print(
+                    f"  HR@{k:<2} {agent_metrics['hr'][k]:.4f}   "
+                    f"NDCG@{k:<2} {agent_metrics['ndcg'][k]:.4f}"
+                )
+            for k in cf["hr"]:
+                if k in agent_metrics["hr"]:
+                    print(f"  delta HR@{k}  {agent_metrics['hr'][k] - cf['hr'][k]:+.4f}")
+    save_report(report, args.report)
+    print(f"\nreport -> {args.report}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="recagent",
@@ -146,6 +225,27 @@ def build_parser() -> argparse.ArgumentParser:
     chat.add_argument("--verbose", action="store_true", help="print the tool trace")
     chat.add_argument("--one-shot", help="run a single request and exit")
 
+    ev = sub.add_parser(
+        "eval", help="offline eval: CF baseline vs agentic reranker on a holdout"
+    )
+    ev.add_argument("--data", default="data")
+    ev.add_argument("--artifacts", default="artifacts")
+    ev.add_argument("--report", default="artifacts/eval_report.json")
+    ev.add_argument("--min-interactions", type=int, default=5)
+    ev.add_argument("--seed", type=int, default=42)
+    ev.add_argument("--k", type=int, default=5, help="items per agent request")
+    ev.add_argument("--sample", type=int, help="evaluate the first N users")
+    ev.add_argument("--parallel", type=int, default=8, help="concurrent agent requests")
+    ev.add_argument(
+        "--agent",
+        action="store_true",
+        help="also run the agentic reranker (requires a vLLM endpoint)",
+    )
+    ev.add_argument(
+        "--genre",
+        help="constraint-eval: hold every agent item to this genre, compare genre precision vs CF",
+    )
+
     return parser
 
 
@@ -157,6 +257,8 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_recommend(args)
     elif args.command == "chat":
         _cmd_chat(args)
+    elif args.command == "eval":
+        _cmd_eval(args)
 
 
 if __name__ == "__main__":
