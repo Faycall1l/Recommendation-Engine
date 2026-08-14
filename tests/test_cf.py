@@ -233,3 +233,46 @@ def test_state_roundtrip_engine_agnostic(tmp_path, kind):
     out = restored["model"].recommend(state["matrix"], 0, n=2)
     expected = [3, 2] if kind == "item" else [2, 3]
     assert [idx for idx, _ in out] == expected
+
+
+def test_userbased_sparse_topk_matches_dense_top_entries():
+    dense = UserBasedCF(min_sim=0.0).fit(_matrix())
+    sparse = UserBasedCF(min_sim=0.0, topk=1).fit(_matrix())
+    assert sp.issparse(sparse.similarity)
+    # sparse kNN keeps the single strongest positive entry per row
+    row = sparse._row(0)
+    assert (row != 0.0).sum() == 1
+    assert max(row) == pytest.approx(max(dense.similarity[0]))
+
+
+def test_userbased_sparse_topk_recommend_and_roundtrip(tmp_path):
+    matrix = _matrix()
+    original = UserBasedCF(min_sim=0.0, topk=1).fit(matrix)
+    assert original.recommend(matrix, 0, n=2) == [(2, 5.0), (3, 4.0)]
+    assert original.predict(0, 2) == pytest.approx(5.0)
+    path = tmp_path / "sparse_user.npz"
+    original.save(path)
+    restored = UserBasedCF.load(path)
+    assert restored.topk == 1
+    assert sp.issparse(restored.similarity)
+    assert restored.recommend(matrix, 0, n=2) == original.recommend(matrix, 0, n=2)
+    np.testing.assert_allclose(restored._row(0), original._row(0))
+
+
+def test_itembased_sparse_topk_recommend_and_roundtrip(tmp_path):
+    matrix = _matrix()
+    original = ItemBasedCF(min_sim=0.0, topk=2).fit(matrix)
+    assert sp.issparse(original.similarity)
+    assert original.recommend(matrix, 0, n=2)[0][0] == 3
+    path = tmp_path / "sparse_item.npz"
+    original.save(path)
+    restored = ItemBasedCF.load(path)
+    assert restored.topk == 2
+    assert sp.issparse(restored.similarity)
+    assert restored.recommend(matrix, 0, n=2) == original.recommend(matrix, 0, n=2)
+
+
+def test_build_cf_topk_passthrough():
+    cf = build_cf("item", _matrix(), topk=2)
+    assert sp.issparse(cf.similarity)
+    assert max(cf.similarity.getnnz(axis=1)) <= 2

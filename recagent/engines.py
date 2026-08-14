@@ -49,8 +49,13 @@ def build_engine(
     factors: int = 64,
     iterations: int = 20,
     regularization: float = 0.1,
+    topk: int | None = None,
 ):
-    """Fit and return the engine named by ``kind`` (see :data:`ENGINE_KINDS`)."""
+    """Fit and return the engine named by ``kind`` (see :data:`ENGINE_KINDS`).
+
+    ``topk`` (memory-based engines only) keeps a sparse top-k neighbourhood
+    instead of the full dense similarity — required at large user/item counts.
+    """
     kind = kind.lower()
     if kind not in ENGINE_KINDS:
         raise ValueError(f"unknown engine kind {kind!r}; expected one of {ENGINE_KINDS}")
@@ -59,9 +64,9 @@ def build_engine(
 
         return Recommender(factors=factors, iterations=iterations, regularization=regularization).fit(matrix)
     if kind == USER:
-        return UserBasedCF().fit(matrix)
+        return UserBasedCF(topk=topk).fit(matrix)
     if kind == ITEM:
-        return ItemBasedCF().fit(matrix)
+        return ItemBasedCF(topk=topk).fit(matrix)
     if kind == MF:
         return ExplicitALS(
             factors=factors, iterations=iterations, regularization=regularization, seed=seed
