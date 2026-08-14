@@ -142,3 +142,11 @@ def test_itembased_fit_means_and_similarity():
     assert sim[1, 2] == pytest.approx(0.5)
     np.testing.assert_allclose(np.diag(sim), 0.0)
     assert sim.shape == (4, 4)
+
+
+def test_itembased_predict_hand_case():
+    cf = ItemBasedCF(min_sim=0.0).fit(_matrix())
+    # user 0 rates item1=3; item2 similar to item1 (0.5) -> (0.5*3)/0.5 = 3.0
+    assert cf.predict(0, 2) == pytest.approx(3.0)
+    # item3 is similar to nothing -> falls back to the user mean (4.0)
+    assert cf.predict(0, 3) == pytest.approx(4.0)

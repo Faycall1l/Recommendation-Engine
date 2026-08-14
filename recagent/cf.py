@@ -172,3 +172,18 @@ class ItemBasedCF:
         np.fill_diagonal(similarity, 0.0)
         similarity[similarity < self.min_sim] = 0.0
         return similarity
+
+    def predict(self, user_idx: int, item_idx: int) -> float:
+        """Predicted rating: similarity-weighted mean of the user's own ratings."""
+        if self.matrix is None or self.similarity is None:
+            raise ValueError("fit() must be called before predict()")
+        similarity = self.similarity[item_idx]
+        row_start, row_end = self.matrix.indptr[user_idx : user_idx + 2]
+        rated_items = self.matrix.indices[row_start:row_end]
+        rated_values = self.matrix.data[row_start:row_end]
+        weights = similarity[rated_items]
+        numer = float(np.dot(weights, rated_values))
+        denom = float(np.abs(weights).sum())
+        if denom == 0.0:
+            return float(self.user_means[user_idx])
+        return numer / denom
