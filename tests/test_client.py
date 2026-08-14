@@ -3,9 +3,29 @@ from types import SimpleNamespace
 import scipy.sparse as sp
 
 from recagent.agent import RankedItem, RankedItems
+from recagent.cf import UserBasedCF
 from recagent.client import RecClient, _to_recommendations
 from recagent.config import LLMConfig
 from recagent.tools import ToolRegistry
+
+
+def _user_cf_state():
+    matrix = sp.csr_matrix([[5.0, 3.0, 0.0, 0.0], [0.0, 1.0, 3.0, 0.0], [2.0, 0.0, 4.0, 0.0]])
+    return {
+        "model": UserBasedCF().fit(matrix),
+        "matrix": matrix,
+        "uid_to_idx": {1: 0, 2: 1, 3: 2},
+        "iid_to_idx": {10: 0, 11: 1, 12: 2, 13: 3},
+        "user_ids": [1, 2, 3],
+        "item_ids": [10, 11, 12, 13],
+        "items_meta": {
+            10: {"title": "Alpha", "genres": ["Sci-Fi"]},
+            11: {"title": "Beta", "genres": ["Drama"]},
+            12: {"title": "Gamma", "genres": ["Comedy"]},
+            13: {"title": "Delta", "genres": ["Sci-Fi"]},
+        },
+        "cf_kind": "user",
+    }
 
 DISABLED = LLMConfig(enabled=False)
 
@@ -128,3 +148,25 @@ def test_to_recommendations_maps_scores():
     items = _to_recommendations(ranked, deps, scores={10: 0.9})
     assert items[0].score == 0.9
     assert items[0].reason == "top"
+
+
+def test_recommend_works_with_user_cf_engine(tmp_path):
+    client = RecClient(
+        state=_user_cf_state(),
+        llm_config=DISABLED,
+        feedback_path=tmp_path / "f.jsonl",
+    )
+    resp = client.recommend(1, k=2)
+    assert [i.item_id for i in resp.items] == [12, 13]
+    assert resp.items[0].title == "Gamma"
+    assert resp.items[0].reason == "collaborative filter"
+
+
+def test_tools_work_with_user_cf_engine():
+    deps = ToolRegistry(_user_cf_state())
+    assert [e.item_id for e in deps.recommend(1, n=2).items] == [12, 13]
+    users = deps.similar_users(1, n=1).users
+    assert [u.user_id for u in users] == [2]
+    items = deps.similar_items(12, n=2).items
+    assert [e.item_id for e in items] == [11]
+    assert [e.item_id for e in deps.trending(2).items] == [12, 11]

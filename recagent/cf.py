@@ -35,6 +35,64 @@ def build_cf(kind: str, matrix: sp.csr_matrix, min_sim: float = 0.0) -> UserBase
     return (UserBasedCF if kind == "user" else ItemBasedCF)(min_sim=min_sim).fit(matrix)
 
 
+def _row_means(matrix: sp.csr_matrix) -> np.ndarray:
+    """Mean rating per user over rated items only (0 for empty profiles)."""
+    counts = matrix.getnnz(axis=1)
+    sums = np.asarray(matrix.sum(axis=1)).ravel()
+    return np.divide(sums, counts, out=np.zeros_like(sums), where=counts != 0)
+
+
+def _col_means(matrix: sp.csr_matrix) -> np.ndarray:
+    """Mean rating per item over raters only (0 for unrated items)."""
+    counts = matrix.getnnz(axis=0)
+    sums = np.asarray(matrix.sum(axis=0)).ravel()
+    return np.divide(sums, counts, out=np.zeros_like(sums), where=counts != 0)
+
+
+def _user_similarity(matrix: sp.csr_matrix, min_sim: float = 0.0) -> np.ndarray:
+    """User-user Pearson similarity (cosine on mean-centered rows)."""
+    matrix = matrix.tocsr()
+    centered = matrix.copy()
+    rows, cols = centered.nonzero()
+    centered[rows, cols] -= _row_means(matrix)[rows]
+    squared = centered.multiply(centered)
+    norms = np.sqrt(np.asarray(squared.sum(axis=1)).ravel())
+    inv = np.zeros_like(norms)
+    np.divide(1.0, norms, out=inv, where=norms > 0)
+    similarity = ((sp.diags(inv) @ centered) @ (sp.diags(inv) @ centered).T).toarray()
+    np.fill_diagonal(similarity, 0.0)
+    similarity[similarity < min_sim] = 0.0
+    return similarity
+
+
+def _item_similarity(matrix: sp.csr_matrix, min_sim: float = 0.0) -> np.ndarray:
+    """Item-item adjusted-cosine similarity (cosine on mean-centered columns)."""
+    matrix = matrix.tocsr()
+    centered = matrix.copy()
+    rows, cols = centered.nonzero()
+    centered[rows, cols] -= _col_means(matrix)[cols]
+    squared = centered.multiply(centered)
+    norms = np.sqrt(np.asarray(squared.sum(axis=0)).ravel())
+    inv = np.zeros_like(norms)
+    np.divide(1.0, norms, out=inv, where=norms > 0)
+    normalized = centered @ sp.diags(inv)
+    similarity = (normalized.T @ normalized).toarray()
+    np.fill_diagonal(similarity, 0.0)
+    similarity[similarity < min_sim] = 0.0
+    return similarity
+
+
+def _top_similar(similarity: np.ndarray, idx: int, n: int) -> list[tuple[int, float]]:
+    out: list[tuple[int, float]] = []
+    for candidate in np.argsort(-similarity[idx]):
+        if len(out) == n:
+            break
+        if candidate == idx or similarity[idx, candidate] <= 0:
+            continue
+        out.append((int(candidate), float(similarity[idx, candidate])))
+    return out
+
+
 class UserBasedCF:
     """User-user neighbourhood collaborative filtering with Pearson correlation."""
 
@@ -45,20 +103,16 @@ class UserBasedCF:
         self.centered: sp.csr_matrix | None = None
         self.similarity: np.ndarray | None = None
         self.similarity_norm: np.ndarray | None = None
+        self._item_sim: np.ndarray | None = None
 
     def fit(self, matrix: sp.csr_matrix) -> UserBasedCF:
         self.matrix = matrix.tocsr()
-        counts = self.matrix.getnnz(axis=1)
-        sums = np.asarray(self.matrix.sum(axis=1)).ravel()
-        user_means = np.divide(sums, counts, out=np.zeros_like(sums), where=counts != 0)
-        # Mean-center each user's ratings; zeros stay zeros (a user with no
-        # interaction gets a mean of 0 but we never score them).
+        self.user_means = _row_means(self.matrix)
         centered = self.matrix.copy()
-        nonzero_rows, nonzero_cols = centered.nonzero()
-        centered[nonzero_rows, nonzero_cols] -= user_means[nonzero_rows]
-        self.user_means = user_means
+        rows, cols = centered.nonzero()
+        centered[rows, cols] -= self.user_means[rows]
         self.centered = centered
-        self.similarity = self._similarity()
+        self.similarity = _user_similarity(self.matrix, self.min_sim)
         self.similarity_norm = self._normalized_similarity()
         return self
 
@@ -69,17 +123,15 @@ class UserBasedCF:
         np.divide(self.similarity, row_sums[:, None], out=normalized, where=row_sums[:, None] != 0)
         return normalized
 
-    def _similarity(self) -> np.ndarray:
-        """Dense user-user Pearson similarity via cosine on centered ratings."""
-        squared = self.centered.multiply(self.centered)
-        norms = np.sqrt(np.asarray(squared.sum(axis=1)).ravel())
-        inv = np.zeros_like(norms)
-        np.divide(1.0, norms, out=inv, where=norms > 0)
-        normalized = sp.diags(inv) @ self.centered  # L2-normalized rows
-        similarity = (normalized @ normalized.T).toarray()
-        np.fill_diagonal(similarity, 0.0)
-        similarity[similarity < self.min_sim] = 0.0
-        return similarity
+    def similar_users(self, user_idx: int, n: int = 10) -> list[tuple[int, float]]:
+        """Nearest neighbours of a user — the engine's own user-user similarity."""
+        return _top_similar(self.similarity, user_idx, n)
+
+    def similar_items(self, item_idx: int, n: int = 10) -> list[tuple[int, float]]:
+        """Nearest neighbours of an item (adjusted-cosine, computed lazily)."""
+        if self._item_sim is None:
+            self._item_sim = _item_similarity(self.matrix, self.min_sim)
+        return _top_similar(self._item_sim, item_idx, n)
 
     def predict(self, user_idx: int, item_idx: int) -> float:
         """Predicted rating: user mean + similarity-weighted neighbour deviation."""
@@ -121,6 +173,7 @@ class UserBasedCF:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         coo = self.centered.tocoo()
+        matrix_coo = self.matrix.tocoo()
         np.savez(
             path,
             min_sim=self.min_sim,
@@ -130,6 +183,10 @@ class UserBasedCF:
             c_row=coo.row,
             c_col=coo.col,
             c_shape=np.asarray(coo.shape),
+            m_data=matrix_coo.data,
+            m_row=matrix_coo.row,
+            m_col=matrix_coo.col,
+            m_shape=np.asarray(matrix_coo.shape),
         )
         return self
 
@@ -141,6 +198,10 @@ class UserBasedCF:
         obj.centered = sp.coo_matrix(
             (saved["c_data"], (saved["c_row"], saved["c_col"])),
             shape=tuple(saved["c_shape"]),
+        ).tocsr()
+        obj.matrix = sp.coo_matrix(
+            (saved["m_data"], (saved["m_row"], saved["m_col"])),
+            shape=tuple(saved["m_shape"]),
         ).tocsr()
         obj.similarity = saved["similarity"]
         obj.similarity_norm = obj._normalized_similarity()
@@ -157,33 +218,28 @@ class ItemBasedCF:
         self.item_means: np.ndarray | None = None
         self.centered: sp.csr_matrix | None = None
         self.similarity: np.ndarray | None = None
+        self._user_sim: np.ndarray | None = None
 
     def fit(self, matrix: sp.csr_matrix) -> ItemBasedCF:
         self.matrix = matrix.tocsr()
-        counts = self.matrix.getnnz(axis=0)
-        sums = np.asarray(self.matrix.sum(axis=0)).ravel()
-        item_means = np.divide(sums, counts, out=np.zeros_like(sums), where=counts != 0)
+        self.item_means = _col_means(self.matrix)
         centered = self.matrix.copy()
-        nonzero_rows, nonzero_cols = centered.nonzero()
-        centered[nonzero_rows, nonzero_cols] -= item_means[nonzero_cols]
-        self.item_means = item_means
+        rows, cols = centered.nonzero()
+        centered[rows, cols] -= self.item_means[cols]
         self.centered = centered
-        user_counts = np.maximum(self.matrix.getnnz(axis=1), 1)
-        self.user_means = np.asarray(self.matrix.sum(axis=1)).ravel() / user_counts
-        self.similarity = self._similarity()
+        self.user_means = _row_means(self.matrix)
+        self.similarity = _item_similarity(self.matrix, self.min_sim)
         return self
 
-    def _similarity(self) -> np.ndarray:
-        """Adjusted cosine: L2-normalize mean-centered columns, then C^T C."""
-        squared = self.centered.multiply(self.centered)
-        norms = np.sqrt(np.asarray(squared.sum(axis=0)).ravel())
-        inv = np.zeros_like(norms)
-        np.divide(1.0, norms, out=inv, where=norms > 0)
-        normalized = self.centered @ sp.diags(inv)  # column-normalized
-        similarity = (normalized.T @ normalized).toarray()
-        np.fill_diagonal(similarity, 0.0)
-        similarity[similarity < self.min_sim] = 0.0
-        return similarity
+    def similar_items(self, item_idx: int, n: int = 10) -> list[tuple[int, float]]:
+        """Nearest neighbours of an item — the engine's own item-item similarity."""
+        return _top_similar(self.similarity, item_idx, n)
+
+    def similar_users(self, user_idx: int, n: int = 10) -> list[tuple[int, float]]:
+        """Nearest neighbours of a user (Pearson, computed lazily)."""
+        if self._user_sim is None:
+            self._user_sim = _user_similarity(self.matrix, self.min_sim)
+        return _top_similar(self._user_sim, user_idx, n)
 
     def predict(self, user_idx: int, item_idx: int) -> float:
         """Predicted rating: similarity-weighted mean of the user's own ratings."""
