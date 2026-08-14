@@ -1,7 +1,15 @@
-"""Dataset loading and preprocessing for MovieLens 100K."""
+"""Dataset loading and preprocessing for MovieLens 100K and 20M.
+
+Both datasets keep the same explicit 1-5 rating scale and genre tags. ml-20m
+is ~200x larger (20M ratings / 138k users / 27k movies) and uses CSV files
+instead of the tab/pipe-separated ml-100k files, so it has its own loaders;
+``loaders(kind)`` dispatches on dataset kind so the rest of the pipeline is
+dataset-agnostic.
+"""
 
 from __future__ import annotations
 
+import csv
 import urllib.request
 import zipfile
 from collections import Counter
@@ -11,6 +19,9 @@ import numpy as np
 import scipy.sparse as sp
 
 ML_100K_URL = "https://files.grouplens.org/datasets/movielens/ml-100k.zip"
+ML_20M_URL = "https://files.grouplens.org/datasets/movielens/ml-20m.zip"
+
+DATA_KINDS = ("ml-100k", "ml-20m")
 
 GENRES = [
     "unknown",
@@ -50,6 +61,21 @@ def fetch_movielens(root: str | Path = "data") -> Path:
     return dataset_dir
 
 
+def fetch_movielens_20m(root: str | Path = "data") -> Path:
+    """Download and extract ml-20m if missing; return the dataset directory."""
+    root = Path(root)
+    dataset_dir = root / "ml-20m"
+    if dataset_dir.exists():
+        return dataset_dir
+    root.mkdir(parents=True, exist_ok=True)
+    archive = root / "ml-20m.zip"
+    if not archive.exists():
+        urllib.request.urlretrieve(ML_20M_URL, archive)
+    with zipfile.ZipFile(archive) as z:
+        z.extractall(root)
+    return dataset_dir
+
+
 def load_ratings(dataset_dir: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Parse u.data into (user_ids, item_ids, ratings) arrays."""
     users, items, ratings = [], [], []
@@ -60,6 +86,65 @@ def load_ratings(dataset_dir: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]
             items.append(int(i))
             ratings.append(float(r))
     return np.asarray(users), np.asarray(items), np.asarray(ratings)
+
+
+def load_ratings_20m(dataset_dir: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Parse ratings.csv into (user_ids, item_ids, ratings) arrays.
+
+    The csv is ``userId,movieId,rating,timestamp`` with a header row; only the
+    first three columns are read. Pure-python parse of 20M rows is the slowest
+    step of the pipeline (~10-30s) and deliberately has no pandas dependency.
+    """
+    users, items, ratings = [], [], []
+    with open(dataset_dir / "ratings.csv") as f:
+        next(f, None)  # header
+        for line in f:
+            u, i, r, _ = line.rstrip("\n").split(",", maxsplit=3)
+            users.append(int(u))
+            items.append(int(i))
+            ratings.append(float(r))
+    return np.asarray(users), np.asarray(items), np.asarray(ratings)
+
+
+def _year_from_title(title: str) -> int | None:
+    """Release year from a trailing ``(YYYY)`` (or ``(YYYY)``-suffixed) title."""
+    match = title.rsplit("(", 1)[-1]
+    if match.endswith(")") and len(match) == 5 and match[:4].isdigit():
+        return int(match[:4])
+    return None
+
+
+def load_items_20m(dataset_dir: Path) -> dict[int, dict]:
+    """Parse movies.csv into {movie_id: {title, year, genres}}.
+
+    Titles may contain commas and are then quoted in the csv, so rows are read
+    with the stdlib csv reader. Genres are a ``|``-separated list.
+    """
+    items = {}
+    with open(dataset_dir / "movies.csv", newline="", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        next(reader, None)  # header
+        for parts in reader:
+            if len(parts) < 3:
+                continue
+            movie_id = int(parts[0])
+            title = parts[1].strip()
+            genres = [g for g in parts[2].split("|") if g]
+            items[movie_id] = {
+                "title": title,
+                "year": _year_from_title(title),
+                "genres": genres,
+            }
+    return items
+
+
+def loaders(kind: str = "ml-100k"):
+    """Dataset-kind-aware (fetch, load_ratings, load_items) dispatch."""
+    if kind == "ml-20m":
+        return fetch_movielens_20m, load_ratings_20m, load_items_20m
+    if kind == "ml-100k":
+        return fetch_movielens, load_ratings, load_items
+    raise ValueError(f"unknown data kind {kind!r}; expected one of {DATA_KINDS}")
 
 
 def load_items(dataset_dir: Path) -> dict[int, dict]:

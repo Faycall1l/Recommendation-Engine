@@ -1,7 +1,68 @@
 import numpy as np
 import pytest
 
-from recagent.data import encode, leave_one_out, split_ratings
+from recagent.data import (
+    _year_from_title,
+    encode,
+    leave_one_out,
+    load_items_20m,
+    load_ratings_20m,
+    loaders,
+    split_ratings,
+)
+
+
+def test_load_ratings_20m(tmp_path):
+    ratings = tmp_path / "ratings.csv"
+    ratings.write_text(
+        "userId,movieId,rating,timestamp\n"
+        "1,296,5.0,1111111111\n"
+        "1,296,5.0,1111111112\n"
+        "2,1,3.5,1111111113\n"
+    )
+    users, items, values = load_ratings_20m(tmp_path)
+    assert users.tolist() == [1, 1, 2]
+    assert items.tolist() == [296, 296, 1]
+    assert values.tolist() == [5.0, 5.0, 3.5]
+
+
+def test_load_items_20m_parses_quoted_titles(tmp_path):
+    movies = tmp_path / "movies.csv"
+    movies.write_text(
+        "movieId,title,genres\n"
+        "1,Toy Story (1995),Adventure|Animation|Children|Comedy|Fantasy\n"
+        '356,"Where the Boys Are, \'84 (1984)",Comedy\n'
+        "10,Seven Samurai (1954),Action|Adventure|Drama\n"
+    )
+    items = load_items_20m(tmp_path)
+    assert items[1]["title"] == "Toy Story (1995)"
+    assert items[1]["year"] == 1995
+    assert items[1]["genres"] == ["Adventure", "Animation", "Children", "Comedy", "Fantasy"]
+    assert items[356]["title"] == "Where the Boys Are, '84 (1984)"
+    assert items[356]["year"] == 1984
+    assert items[356]["genres"] == ["Comedy"]
+    assert items[10]["year"] == 1954
+    assert items[10]["genres"] == ["Action", "Adventure", "Drama"]
+
+
+def test_year_from_title():
+    assert _year_from_title("Toy Story (1995)") == 1995
+    assert _year_from_title("Seven Samurai (1954)") == 1954
+    assert _year_from_title("A Movie") is None
+    assert _year_from_title("No Year Here (x)") is None
+
+
+def test_loaders_dispatch():
+    fetch, load_ratings, load_items = loaders("ml-100k")
+    assert fetch.__name__ == "fetch_movielens"
+    assert load_ratings.__name__ == "load_ratings"
+    assert load_items.__name__ == "load_items"
+    fetch20, load20, items20 = loaders("ml-20m")
+    assert fetch20.__name__ == "fetch_movielens_20m"
+    assert load20.__name__ == "load_ratings_20m"
+    assert items20.__name__ == "load_items_20m"
+    with pytest.raises(ValueError):
+        loaders("ml-9000")
 
 
 def test_encode_shapes_and_values():
