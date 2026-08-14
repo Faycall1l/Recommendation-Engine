@@ -65,6 +65,7 @@ empty parts) while keeping the reasoning signal.
 python -m pip install -e .
 python -m recagent.cli train --cf user           # user-based (default)
 python -m recagent.cli recommend 196             # engine + top-n
+python -m recagent.cli explain 196 64            # why an item for a user
 python -m recagent.cli train --cf als            # switch engines
 python -m recagent.cli eval --all-cf --sample 100 --agent
 python -m recagent.cli serve --port 8000         # REST gateway (docs at /docs)
@@ -96,6 +97,34 @@ user-based method is competitive at HR@3/5; item-based collapses because the
 held-out item is the only evidence for its neighbours. The agentic reranker
 matches ALS at HR@1/3 and edges ahead at HR@5 — and is the only path that can
 honour hard constraints (verified 5/5 genre compliance live).
+
+## Explainable recommendations
+
+Every recommendation comes with a verifiable "why". `recagent/explain.py`
+derives the evidence deterministically from the trained artefacts — no LLM in
+the loop — so the explanation is always grounded:
+
+- **genre affinity** — the item's genres against the user's rating-weighted
+  dominant genres;
+- **engine score** and its **boost** over the user's mean rating;
+- **similar-taste** — items the user already rated that are item-item similar
+  to the recommendation;
+- popularity and quality fallbacks for cold-start users.
+
+```
+python -m recagent.cli explain 196 64        # CLI (LLM prose when enabled)
+POST /explain  {"user_id": 196, "item_id": 64}   # REST
+client.explain(user_id=196, item_id=64)          # SDK
+```
+
+The LLM restates the evidence as fluent prose in a single structured-output
+call, held to the facts by an explicit no-invention rule; an empty response
+falls back to the deterministic one-liner, so an explanation always exists.
+Live example (user 196, Shawshank Redemption):
+
+> You might enjoy The Shawshank Redemption (1994), as it is a Drama and you
+> have previously liked Stand by Me (1986).
+> — evidence: liked Secrets & Lies (5.0), English Patient (5.0), Stand by Me (5.0)
 
 ## State-of-the-art evaluation (`results/eval_report_v2.json`)
 
