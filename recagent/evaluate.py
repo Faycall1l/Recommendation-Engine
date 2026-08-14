@@ -138,15 +138,21 @@ def loo_ranking_eval_from_arrays(
     if user_sample is not None:
         test_items = {u: test_items[u] for u in sorted(test_items)[:user_sample]}
     ranked: dict[str, dict[int, list[int]]] = {kind: {} for kind in kinds}
+    per_user_rank: dict[str, dict[int, int]] = {kind: {} for kind in kinds}
     for user_id in test_items:
         user_idx = uid_to_idx[user_id]
         for kind, engine in engines.items():
             top = engine.recommend(matrix, user_idx, n=max(ks))
             ranked[kind][user_id] = [int(item_ids[idx]) for idx, _ in top]
+            try:
+                per_user_rank[kind][user_id] = ranked[kind][user_id].index(test_items[user_id]) + 1
+            except ValueError:
+                per_user_rank[kind][user_id] = 0
     out: dict[str, dict] = {}
     for kind in kinds:
         metrics = mean_metrics(ranked[kind], test_items, ks)
         metrics["kind"] = kind
+        metrics["per_user_rank"] = {str(u): r for u, r in per_user_rank[kind].items()}
         out[kind] = metrics
     return out
 
@@ -156,6 +162,51 @@ def loo_ranking_eval(data_dir: str | Path = "data", **kwargs) -> dict:
     dataset_dir = fetch_movielens(data_dir)
     users, items, ratings = load_ratings(dataset_dir)
     return loo_ranking_eval_from_arrays(users, items, ratings, **kwargs)
+
+
+def hits_from_ranks(per_user_rank: dict[str, int] | dict[int, int], k: int) -> np.ndarray:
+    """Per-user hit@k boolean vector from a {user: 1-based rank-or-0} map."""
+    uids = sorted(per_user_rank)
+    return np.asarray([1 if per_user_rank[u] and per_user_rank[u] <= k else 0 for u in uids])
+
+
+def paired_bootstrap(
+    a: np.ndarray,
+    b: np.ndarray,
+    *,
+    n_boot: int = 2000,
+    seed: int = 42,
+    ci: float = 0.95,
+) -> dict:
+    """Paired bootstrap on the mean difference ``a - b``.
+
+    Resamples user indices with replacement; reports the CI of the mean
+    difference and a two-sided p-value for diff == 0 under the shifted null.
+    """
+    a = np.asarray(a, dtype=float)
+    b = np.asarray(b, dtype=float)
+    if len(a) != len(b):
+        raise ValueError("paired scores must be equal length")
+    if len(a) == 0:
+        raise ValueError("need at least one pair of scores")
+    rng = np.random.default_rng(seed)
+    n = len(a)
+    indices = rng.integers(0, n, size=(n_boot, n))
+    boot = (a[indices] - b[indices]).mean(axis=1)
+    mean_diff = float(a.mean() - b.mean())
+    lo = (1.0 - ci) / 2.0
+    ci_lo, ci_hi = float(np.quantile(boot, lo)), float(np.quantile(boot, 1.0 - lo))
+    centered = boot - mean_diff
+    p_value = float(np.mean(np.abs(centered) >= abs(mean_diff)))
+    return {
+        "mean_diff": round(mean_diff, 4),
+        "ci_lo": round(ci_lo, 4),
+        "ci_hi": round(ci_hi, 4),
+        "ci_level": ci,
+        "n_boot": n_boot,
+        "p_value": round(p_value, 4),
+        "n": n,
+    }
 
 
 def mean_metrics(

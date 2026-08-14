@@ -6,8 +6,10 @@ from recagent.cf import build_cf
 from recagent.evaluate import (
     cf_baseline,
     cv_rating_eval_from_arrays,
+    hits_from_ranks,
     loo_ranking_eval_from_arrays,
     mean_metrics,
+    paired_bootstrap,
     rating_metrics,
 )
 from tests.test_tools import build_state
@@ -191,3 +193,43 @@ def test_loo_ranking_eval_rejects_rating_only_engines():
     users, items, ratings = _taste_group_ratings()
     with pytest.raises(ValueError):
         loo_ranking_eval_from_arrays(users, items, ratings, kinds=("global-mean",))
+
+
+def test_hits_from_ranks():
+    ranks = {1: 3, 2: 1, 3: 0, 4: 5}
+    assert hits_from_ranks(ranks, 5).tolist() == [1, 1, 0, 1]
+    assert hits_from_ranks(ranks, 2).tolist() == [0, 1, 0, 0]
+
+
+def test_paired_bootstrap_finds_separation():
+    a = np.ones(40)
+    b = np.zeros(40)
+    out = paired_bootstrap(a, b, n_boot=1000, seed=1)
+    assert out["mean_diff"] == 1.0
+    assert out["ci_lo"] > 0.9 and out["ci_hi"] <= 1.0
+    assert out["p_value"] < 0.01
+
+
+def test_paired_bootstrap_null_is_insignificant():
+    rng = np.random.default_rng(0)
+    x = rng.uniform(size=50)
+    out = paired_bootstrap(x, x, n_boot=1000, seed=1)
+    assert out["mean_diff"] == 0.0
+    assert out["p_value"] == 1.0
+    assert out["ci_lo"] <= 0 <= out["ci_hi"]
+
+
+def test_paired_bootstrap_is_deterministic():
+    rng = np.random.default_rng(0)
+    a = rng.uniform(size=30)
+    b = rng.uniform(size=30)
+    first = paired_bootstrap(a, b, n_boot=500, seed=7)
+    second = paired_bootstrap(a, b, n_boot=500, seed=7)
+    assert first == second
+
+
+def test_paired_bootstrap_validates_input():
+    with pytest.raises(ValueError):
+        paired_bootstrap([1.0, 2.0], [1.0])
+    with pytest.raises(ValueError):
+        paired_bootstrap([], [])
