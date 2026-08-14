@@ -77,3 +77,44 @@ def test_search_items_filters_by_genre():
     assert out.items, "expected at least one action movie"
     for entry in out.items:
         assert "Action" in entry.genres
+
+
+def test_similar_items_excludes_seed():
+    state = build_state()
+    registry = ToolRegistry(state)
+    out = registry.similar_items(1, n=5)
+    assert len(out.items) <= 5
+    assert all(i.item_id != 1 for i in out.items)
+    assert all(i.score is not None for i in out.items)
+
+
+def test_similar_users_excludes_self():
+    state = build_state()
+    registry = ToolRegistry(state)
+    out = registry.similar_users(101, n=5)
+    assert len(out.users) <= 5
+    assert all(u.user_id != 101 for u in out.users)
+    assert all(0.0 <= u.similarity <= 1.0 for u in out.users)
+
+
+def test_filter_items_by_genre_and_rating():
+    state = build_state()
+    registry = ToolRegistry(state)
+    out = registry.filter_items(genres=["Action"], min_rating=2.0, n=5)
+    assert out.items
+    for entry in out.items:
+        assert "Action" in entry.genres
+        assert entry.avg_rating is None or entry.avg_rating >= 2.0
+    sorted_counts = [e.rating_count for e in out.items]
+    assert sorted_counts == sorted(sorted_counts, reverse=True)
+
+
+def test_trending_returns_popularity_prior():
+    state = build_state()
+    registry = ToolRegistry(state)
+    out = registry.trending(n=5)
+    assert 0 < len(out.items) <= 5
+    for entry in out.items:
+        assert entry.rating_count > 0
+    counts = [e.score for e in out.items]
+    assert counts == sorted(counts, reverse=True)

@@ -40,6 +40,10 @@ class Recommender:
         ids, scores = self.model.similar_items(item_idx, N=n)
         return list(zip(map(int, ids), map(float, scores)))
 
+    def similar_users(self, user_idx: int, n: int = 10) -> list[tuple[int, float]]:
+        ids, scores = self.model.similar_users(user_idx, N=n)
+        return list(zip(map(int, ids), map(float, scores)))
+
     def save(self, path: str | Path) -> Recommender:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.model.save(path)
