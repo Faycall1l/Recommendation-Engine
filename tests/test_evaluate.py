@@ -41,6 +41,22 @@ def test_mean_metrics_empty_rankings_do_not_crash():
     assert metrics["hr"]["5"] == 1.0
 
 
+def test_mean_metrics_extended_ranking_metrics():
+    ranked = {1: [10, 20, 30], 2: [10, 20, 30], 3: [10, 20, 30]}
+    test_items = {1: 30, 2: 10, 3: 999}
+    m = mean_metrics(ranked, test_items, ks=(1, 3))
+    n = 3
+    # recall == hr for single-relevant protocol
+    assert m["recall"]["3"] == m["hr"]["3"] == round(2 / 3, 4)
+    # precision@k = hits / (n * k)
+    assert m["precision"]["1"] == round(1 / n, 4)
+    assert m["precision"]["3"] == round(2 / (n * 3), 4)
+    # MAP: user1 1/3 (rank3), user2 1/1 (rank1)
+    assert m["map"]["3"] == round((1 / 3 + 1) / n, 4)
+    # MRR: same two users
+    assert m["mrr"] == round((1 / 3 + 1) / n, 4)
+
+
 def test_cf_baseline_runs_and_is_deterministic():
     state = build_state(n_users=12, n_items=25)
     test_items = {101: 1, 102: 2, 103: 3}

@@ -25,31 +25,46 @@ def mean_metrics(
     test_items: dict[int, int],
     ks: tuple[int, ...] = KS,
 ) -> dict:
-    """Aggregate HR@k and NDCG@k across users.
+    """Aggregate ranking metrics across users.
 
     ``ranked_by_user`` maps user_id to an ordered list of raw item ids;
-    ``test_items`` maps user_id to the held-out item id.
+    ``test_items`` maps user_id to the (single) held-out item id.
+
+    Reports HR@k, Recall@k, Precision@k, NDCG@k, MAP@k and MRR. With a single
+    relevant item per user, Recall@k == HR@k by construction.
     """
     hits = {k: 0 for k in ks}
+    recall = {k: 0 for k in ks}
+    precision = {k: 0 for k in ks}
     ndcg = {k: 0.0 for k in ks}
+    ap = {k: 0.0 for k in ks}
+    reciprocal_rank = 0.0
     n = 0
     for user_id, target in test_items.items():
         ranked = ranked_by_user.get(user_id) or []
-        position = {item_id: rank for rank, item_id in enumerate(ranked, start=1)}
-        if not position:
+        if not ranked:
             continue
         n += 1
+        position = {item_id: rank for rank, item_id in enumerate(ranked, start=1)}
         rank = position.get(target)
         if rank is None:
             continue
+        reciprocal_rank += 1.0 / rank
         for k in ks:
             if rank <= k:
                 hits[k] += 1
+                recall[k] += 1  # single relevant item
+                precision[k] += 1.0 / k
                 ndcg[k] += 1.0 / np.log2(rank + 1)
+                ap[k] += 1.0 / rank
     return {
         "n_users": n,
         "hr": {str(k): round(hits[k] / n, 4) for k in ks},
+        "recall": {str(k): round(recall[k] / n, 4) for k in ks},
+        "precision": {str(k): round(precision[k] / n, 4) for k in ks},
         "ndcg": {str(k): round(ndcg[k] / n, 4) for k in ks},
+        "map": {str(k): round(ap[k] / n, 4) for k in ks},
+        "mrr": round(reciprocal_rank / n, 4),
     }
 
 
