@@ -20,7 +20,7 @@ dependencies = [
     "implicit>=0.7.2",
     "numpy",
     "scipy",
-    "requests",
+    "pydantic-ai>=2.30",
     "python-dotenv",
 ]
 
