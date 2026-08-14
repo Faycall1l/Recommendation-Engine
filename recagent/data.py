@@ -123,3 +123,41 @@ def leave_one_out(
     mask = np.ones(len(users), dtype=bool)
     mask[held] = False
     return (users[mask], items[mask], ratings[mask]), (users[held], items[held])
+
+
+def split_ratings(
+    users: np.ndarray,
+    items: np.ndarray,
+    ratings: np.ndarray,
+    *,
+    k: int = 5,
+    seed: int = 42,
+    min_train_per_user: int = 1,
+) -> list[tuple[tuple[np.ndarray, np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray, np.ndarray]]]:
+    """Deterministic random k-fold split of explicit rating triples.
+
+    Each fold is ``((train_u, train_i, train_r), (test_u, test_i, test_r))``.
+    Test triples whose user has fewer than ``min_train_per_user`` train ratings
+    in that fold are dropped, so rating predictions always have a user mean to
+    fall back on.
+    """
+    if k < 2:
+        raise ValueError(f"k must be >= 2, got {k}")
+    rng = np.random.default_rng(seed)
+    n = len(users)
+    fold_of_index = np.empty(n, dtype=int)
+    fold_of_index[rng.permutation(n)] = np.arange(n) % k
+    folds: list[
+        tuple[tuple[np.ndarray, np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray, np.ndarray]]
+    ] = []
+    for fold in range(k):
+        test_mask = fold_of_index == fold
+        train_mask = ~test_mask
+        tr_u, tr_i, tr_r = users[train_mask], items[train_mask], ratings[train_mask]
+        te_u, te_i, te_r = users[test_mask], items[test_mask], ratings[test_mask]
+        train_counts = Counter(tr_u)
+        keep = np.fromiter(
+            (train_counts[u] >= min_train_per_user for u in te_u), dtype=bool, count=len(te_u)
+        )
+        folds.append(((tr_u, tr_i, tr_r), (te_u[keep], te_i[keep], te_r[keep])))
+    return folds
