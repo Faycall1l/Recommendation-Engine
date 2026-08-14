@@ -75,3 +75,23 @@ def test_userbased_predict_falls_back_to_mean_without_neighbours():
     matrix = sp.csr_matrix([[5.0, 0.0, 0.0], [0.0, 3.0, 0.0]])
     cf = UserBasedCF().fit(matrix)
     assert cf.predict(0, 1) == pytest.approx(5.0)
+
+
+def test_userbased_recommend_hand_case():
+    matrix = _matrix()
+    cf = UserBasedCF(min_sim=0.0).fit(matrix)
+    # user 0: scores [4,3,5,4], rated {0,1} -> unseen 2 (5.0), 3 (4.0)
+    assert cf.recommend(matrix, 0, n=2) == [(2, 5.0), (3, 4.0)]
+    # user 2: scores [3,2,4,3], rated {0,2} -> unseen 3 (3.0), 1 (2.0)
+    assert cf.recommend(matrix, 2, n=2) == [(3, 3.0), (1, 2.0)]
+
+
+def test_userbased_recommend_excludes_rated_and_caps_n():
+    matrix = _matrix()
+    cf = UserBasedCF(min_sim=0.0).fit(matrix)
+    out = cf.recommend(matrix, 0, n=10)
+    rated = {0, 1}
+    ids = [idx for idx, _ in out]
+    assert rated.isdisjoint(ids)
+    assert len(out) == 2  # only two unseen items exist
+    assert all(isinstance(score, float) for _, score in out)

@@ -67,3 +67,21 @@ class UserBasedCF:
         if denom == 0.0:
             return float(self.user_means[user_idx])
         return float(self.user_means[user_idx] + (similarity @ deviations) / denom)
+
+    def recommend(self, matrix: sp.csr_matrix, user_idx: int, n: int = 10) -> list[tuple[int, float]]:
+        """Top-n unseen items by predicted rating, best first (ALS-compatible)."""
+        similarity = self.similarity[user_idx]
+        denom = float(np.abs(similarity).sum())
+        if denom == 0.0:
+            scores = np.full(matrix.shape[1], self.user_means[user_idx])
+        else:
+            scores = self.user_means[user_idx] + (similarity / denom) @ self.centered
+        rated = set(matrix.indices[matrix.indptr[user_idx] : matrix.indptr[user_idx + 1]])
+        out: list[tuple[int, float]] = []
+        for item_idx in np.argsort(-scores):
+            if len(out) == n:
+                break
+            if item_idx in rated:
+                continue
+            out.append((int(item_idx), float(scores[item_idx])))
+        return out
