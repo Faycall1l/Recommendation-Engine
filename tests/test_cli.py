@@ -32,6 +32,18 @@ def test_train_cf_flag_accepts_all_engines():
         assert args.cf == kind
 
 
+def test_data_kind_flags():
+    args = build_parser().parse_args(["train"])
+    assert args.data_kind == "ml-100k"
+    args = build_parser().parse_args(["train", "--data-kind", "ml-20m"])
+    assert args.data_kind == "ml-20m"
+    args = build_parser().parse_args(["eval", "--data-kind", "ml-20m", "--sample-ratings", "5000"])
+    assert args.data_kind == "ml-20m"
+    assert args.sample_ratings == 5000
+    args = build_parser().parse_args(["eval"])
+    assert args.sample_ratings is None
+
+
 def test_recommend_prints_engine_kind(tmp_path, capsys):
     main(["recommend", "1", "--artifacts", str(_state(tmp_path))])
     out = capsys.readouterr().out
@@ -87,6 +99,36 @@ def test_eval_exclude_head_flag():
     assert args.exclude_head == 0.02
     args = build_parser().parse_args(["eval"])
     assert args.exclude_head is None
+
+
+def test_train_ml20m_end_to_end(tmp_path, monkeypatch, capsys):
+    from recagent.data import load_items_20m, load_ratings_20m
+
+    # synthetic ml-20m layout: 3 users x 6 ratings, enough for min_interactions=5
+    dataset = tmp_path / "ml-20m"
+    dataset.mkdir()
+    rows = []
+    for u in range(1, 4):
+        for j in range(6):
+            rows.append(f"{u},{100 + u * 10 + j},{float(1 + (u + j) % 5)},12345\n")
+    (dataset / "ratings.csv").write_text("userId,movieId,rating,timestamp\n" + "".join(rows))
+    (dataset / "movies.csv").write_text(
+        "movieId,title,genres\n101,Toy Story (1995),Comedy\n102,Seven Samurai (1954),Drama\n"
+    )
+
+    monkeypatch.setattr(
+        "recagent.data.loaders",
+        lambda kind: (lambda d: dataset, load_ratings_20m, load_items_20m),
+    )
+    artifacts = tmp_path / "art"
+    main(["train", "--data", str(tmp_path), "--data-kind", "ml-20m", "--artifacts", str(artifacts)])
+    out = capsys.readouterr().out
+    assert "saved artefacts" in out
+    from recagent.state import load_state
+
+    state = load_state(artifacts)
+    assert state["cf_kind"] == "user"
+    assert state["matrix"].shape == (3, 15)
 
 
 def test_eval_rating_protocol_writes_report(tmp_path, capsys, monkeypatch):

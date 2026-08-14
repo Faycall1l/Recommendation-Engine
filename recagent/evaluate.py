@@ -17,7 +17,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from recagent.agent import RecAgent
-from recagent.data import encode, fetch_movielens, leave_one_out, load_ratings, split_ratings
+from recagent.data import encode, leave_one_out, loaders, split_ratings
 from recagent.tools import ToolRegistry
 
 KS = (1, 3, 5, 10)
@@ -48,11 +48,14 @@ def cv_rating_eval_from_arrays(
     factors: int = 64,
     iterations: int = 20,
     regularization: float = 0.1,
+    sample_ratings: int | None = None,
 ) -> dict:
     """5-fold CV explicit-rating prediction: RMSE/MAE mean+-std per engine.
 
     Engines are refit from scratch on each fold's train matrix and scored on
     the fold's held-out triples. ``als`` is rejected (no calibrated predict).
+    ``sample_ratings`` deterministically subsamples rating triples before the
+    fold split — the standard way to make CV tractable on 20M-scale data.
     """
     from recagent.engines import RATING_ENGINES, build_engine
 
@@ -60,6 +63,10 @@ def cv_rating_eval_from_arrays(
     for kind in kinds:
         if kind not in RATING_ENGINES:
             raise ValueError(f"rating protocol supports {RATING_ENGINES}, got {kind!r}")
+    if sample_ratings is not None:
+        rng = np.random.default_rng(seed)
+        take = rng.choice(len(ratings), size=sample_ratings, replace=False)
+        users, items, ratings = users[take], items[take], ratings[take]
     matrix, uid_to_idx, iid_to_idx, _user_ids, _item_ids = encode(users, items, ratings)
     folds = split_ratings(users, items, ratings, k=k, seed=seed)
     per_fold: dict[str, list[dict]] = {kind: [] for kind in kinds}
@@ -101,10 +108,11 @@ def cv_rating_eval_from_arrays(
     return out
 
 
-def cv_rating_eval(data_dir: str | Path = "data", **kwargs) -> dict:
-    """``cv_rating_eval_from_arrays`` over the real ml-100k data."""
-    dataset_dir = fetch_movielens(data_dir)
-    users, items, ratings = load_ratings(dataset_dir)
+def cv_rating_eval(data_dir: str | Path = "data", *, data_kind: str = "ml-100k", **kwargs) -> dict:
+    """``cv_rating_eval_from_arrays`` over a real MovieLens dataset."""
+    fetch, load_ratings_fn, _load_items = loaders(data_kind)
+    dataset_dir = fetch(data_dir)
+    users, items, ratings = load_ratings_fn(dataset_dir)
     return cv_rating_eval_from_arrays(users, items, ratings, **kwargs)
 
 
@@ -186,10 +194,11 @@ def loo_ranking_eval_from_arrays(
     return out
 
 
-def loo_ranking_eval(data_dir: str | Path = "data", **kwargs) -> dict:
-    """``loo_ranking_eval_from_arrays`` over the real ml-100k data."""
-    dataset_dir = fetch_movielens(data_dir)
-    users, items, ratings = load_ratings(dataset_dir)
+def loo_ranking_eval(data_dir: str | Path = "data", *, data_kind: str = "ml-100k", **kwargs) -> dict:
+    """``loo_ranking_eval_from_arrays`` over a real MovieLens dataset."""
+    fetch, load_ratings_fn, _load_items = loaders(data_kind)
+    dataset_dir = fetch(data_dir)
+    users, items, ratings = load_ratings_fn(dataset_dir)
     return loo_ranking_eval_from_arrays(users, items, ratings, **kwargs)
 
 
@@ -376,10 +385,18 @@ async def agent_baseline(
     return mean_metrics(ranked, test_items, ks=(1, 3, k)), details
 
 
-def build_test_items(state: dict, data_dir: str, *, min_interactions: int = 5, seed: int = 42) -> dict[int, int]:
+def build_test_items(
+    state: dict,
+    data_dir: str,
+    *,
+    min_interactions: int = 5,
+    seed: int = 42,
+    data_kind: str = "ml-100k",
+) -> dict[int, int]:
     """Re-derive the exact leave-one-out split used at training time."""
-    dataset_dir = fetch_movielens(data_dir)
-    users, items, ratings = load_ratings(dataset_dir)
+    fetch, load_ratings_fn, _load_items = loaders(data_kind)
+    dataset_dir = fetch(data_dir)
+    users, items, ratings = load_ratings_fn(dataset_dir)
     _, (test_users, test_items) = leave_one_out(
         users, items, ratings, min_interactions=min_interactions, seed=seed
     )

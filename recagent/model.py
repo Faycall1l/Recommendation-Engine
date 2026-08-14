@@ -8,7 +8,7 @@ import numpy as np
 import scipy.sparse as sp
 from implicit.als import AlternatingLeastSquares
 
-from recagent.data import encode, fetch_movielens, leave_one_out, load_items, load_ratings
+from recagent.data import encode, leave_one_out
 
 
 class Recommender:
@@ -72,21 +72,25 @@ def train_from_data(
     factors: int = 64,
     iterations: int = 20,
     cf: str = "user",
+    data_kind: str = "ml-100k",
 ) -> tuple[Recommender, sp.csr_matrix, dict, dict, dict, dict, np.ndarray, np.ndarray]:
     """End-to-end: fetch, split leave-one-out, encode, fit a CF engine.
 
     ``cf`` selects the engine: ``als`` (implicit ALS wrapper) or the
     memory-based ``user``/``item`` neighbourhood methods (default ``user``).
+    ``data_kind`` selects the dataset (``ml-100k`` or ``ml-20m``).
 
     Returns the fitted model plus the artefacts needed for inference and eval.
     """
     from recagent.cf import CF_KINDS, build_cf
+    from recagent.data import loaders
 
     if cf not in CF_KINDS:
         raise ValueError(f"cf must be one of {CF_KINDS}, got {cf!r}")
-    dataset_dir = fetch_movielens(data_dir)
-    users, items, ratings = load_ratings(dataset_dir)
-    items_meta = load_items(dataset_dir)
+    fetch, load_ratings_fn, load_items_fn = loaders(data_kind)
+    dataset_dir = fetch(data_dir)
+    users, items, ratings = load_ratings_fn(dataset_dir)
+    items_meta = load_items_fn(dataset_dir)
     (tr_u, tr_i, tr_r), _ = leave_one_out(
         users, items, ratings, min_interactions=min_interactions, seed=seed
     )

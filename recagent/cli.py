@@ -17,6 +17,7 @@ def _cmd_train(args: argparse.Namespace) -> None:
             factors=args.factors,
             iterations=args.iterations,
             cf=args.cf,
+            data_kind=args.data_kind,
         )
     )
     save_state(
@@ -130,7 +131,14 @@ def _run_rating_protocol(args: argparse.Namespace) -> str:
     kinds = ["user", "item", "mf"]
     if args.baselines:
         kinds = ["global-mean", "user-mean", "item-mean", "user", "item", "mf"]
-    results = cv_rating_eval(args.data, kinds=kinds, k=args.folds, seed=args.seed)
+    results = cv_rating_eval(
+        args.data,
+        data_kind=args.data_kind,
+        kinds=kinds,
+        k=args.folds,
+        seed=args.seed,
+        sample_ratings=args.sample_ratings,
+    )
     print(f"\n5-fold CV explicit-rating prediction (k={args.folds})")
     for kind, m in results.items():
         print(
@@ -138,7 +146,17 @@ def _run_rating_protocol(args: argparse.Namespace) -> str:
             f"MAE {m['mae']:.4f} ± {m['mae_std']:.4f}"
         )
     with open(args.rating_report, "w") as fh:
-        json.dump({"protocol": "rating", "folds": args.folds, "engines": results}, fh, indent=2)
+        json.dump(
+            {
+                "protocol": "rating",
+                "folds": args.folds,
+                "data_kind": args.data_kind,
+                "sample_ratings": args.sample_ratings,
+                "engines": results,
+            },
+            fh,
+            indent=2,
+        )
     print(f"rating report -> {args.rating_report}")
     return args.rating_report
 
@@ -168,15 +186,20 @@ def _cmd_eval(args: argparse.Namespace) -> None:
 
     state = load_state(args.artifacts)
     test_items = build_test_items(
-        state, args.data, min_interactions=args.min_interactions, seed=args.seed
+        state,
+        args.data,
+        min_interactions=args.min_interactions,
+        seed=args.seed,
+        data_kind=args.data_kind,
     )
     if args.exclude_head is not None:
-        from recagent.data import fetch_movielens, load_ratings
+        from recagent.data import loaders
         from recagent.evaluate import head_item_ids
 
         if not 0.0 <= args.exclude_head < 1.0:
             raise SystemExit(f"--exclude-head must be in [0, 1), got {args.exclude_head}")
-        _, items, _ = load_ratings(fetch_movielens(args.data))
+        _fetch, load_ratings_fn, _load_items = loaders(args.data_kind)
+        _, items, _ = load_ratings_fn(_fetch(args.data))
         head = head_item_ids(items, args.exclude_head)
         before = len(test_items)
         test_items = {u: i for u, i in test_items.items() if i not in head}
@@ -201,7 +224,7 @@ def _cmd_eval(args: argparse.Namespace) -> None:
 
     primary = kinds[0]
     cf = cf_results[primary]
-    report = {"dataset": "ml-100k", "cf_baseline": cf_results, "agent": None}
+    report = {"dataset": args.data_kind, "cf_baseline": cf_results, "agent": None}
     if args.agent:
         config = load_llm_config()
         if not config.enabled:
@@ -327,6 +350,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     train = sub.add_parser("train", help="fetch data and fit a CF engine")
     train.add_argument("--data", default="data", help="data directory (default: data)")
+    train.add_argument(
+        "--data-kind",
+        choices=("ml-100k", "ml-20m"),
+        default="ml-100k",
+        help="dataset family (default: ml-100k)",
+    )
     train.add_argument("--artifacts", default="artifacts", help="output directory")
     train.add_argument("--factors", type=int, default=64)
     train.add_argument("--iterations", type=int, default=20)
@@ -363,6 +392,17 @@ def build_parser() -> argparse.ArgumentParser:
         "eval", help="offline eval: CF baseline vs agentic reranker on a holdout"
     )
     ev.add_argument("--data", default="data")
+    ev.add_argument(
+        "--data-kind",
+        choices=("ml-100k", "ml-20m"),
+        default="ml-100k",
+        help="dataset family (default: ml-100k)",
+    )
+    ev.add_argument(
+        "--sample-ratings",
+        type=int,
+        help="rating protocol: deterministically subsample this many rating triples",
+    )
     ev.add_argument("--artifacts", default="artifacts")
     ev.add_argument("--report", default="artifacts/eval_report.json")
     ev.add_argument("--min-interactions", type=int, default=5)
