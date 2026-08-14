@@ -121,6 +121,28 @@ def _cmd_chat(args: argparse.Namespace) -> None:
         handle(line)
 
 
+def _run_rating_protocol(args: argparse.Namespace) -> str:
+    """5-fold CV explicit-rating RMSE/MAE per engine; returns the report path."""
+    import json
+
+    from recagent.evaluate import cv_rating_eval
+
+    kinds = ["user", "item", "mf"]
+    if args.baselines:
+        kinds = ["global-mean", "user-mean", "item-mean", "user", "item", "mf"]
+    results = cv_rating_eval(args.data, kinds=kinds, k=args.folds, seed=args.seed)
+    print(f"\n5-fold CV explicit-rating prediction (k={args.folds})")
+    for kind, m in results.items():
+        print(
+            f"  {kind:<12} RMSE {m['rmse']:.4f} ± {m['rmse_std']:.4f}   "
+            f"MAE {m['mae']:.4f} ± {m['mae_std']:.4f}"
+        )
+    with open(args.rating_report, "w") as fh:
+        json.dump({"protocol": "rating", "folds": args.folds, "engines": results}, fh, indent=2)
+    print(f"rating report -> {args.rating_report}")
+    return args.rating_report
+
+
 def _cmd_eval(args: argparse.Namespace) -> None:
     import asyncio
 
@@ -137,6 +159,11 @@ def _cmd_eval(args: argparse.Namespace) -> None:
     )
     from recagent.state import load_state
     from recagent.tools import ToolRegistry
+
+    if args.protocol in ("rating", "all"):
+        _run_rating_protocol(args)
+    if args.protocol == "rating":
+        return
 
     state = load_state(args.artifacts)
     test_items = build_test_items(
@@ -208,6 +235,35 @@ def _cmd_eval(args: argparse.Namespace) -> None:
             for k in cf["hr"]:
                 if k in agent_metrics["hr"]:
                     print(f"  delta HR@{k}  {agent_metrics['hr'][k] - cf['hr'][k]:+.4f}")
+
+    if args.bootstrap:
+        from recagent.evaluate import hits_from_ranks, mrr_from_ranks, paired_bootstrap
+
+        present = [k for k in ("als", "user", "item") if k in cf_results]
+        report["bootstrap"] = {}
+        for i, a in enumerate(present):
+            for b in present[i + 1 :]:
+                ha = hits_from_ranks(cf_results[a]["per_user_rank"], 5)
+                hb = hits_from_ranks(cf_results[b]["per_user_rank"], 5)
+                ma = mrr_from_ranks(cf_results[a]["per_user_rank"])
+                mb = mrr_from_ranks(cf_results[b]["per_user_rank"])
+                key = f"{a}_vs_{b}"
+                report["bootstrap"][key] = {
+                    "hit_at_5": paired_bootstrap(ha, hb),
+                    "mrr": paired_bootstrap(ma, mb),
+                }
+                hit = report["bootstrap"][key]["hit_at_5"]
+                mrr = report["bootstrap"][key]["mrr"]
+                print(f"\nPaired bootstrap {a} vs {b} (n={hit['n']})")
+                print(
+                    f"  hit@5 {hit['mean_diff']:+.4f}  "
+                    f"95% CI [{hit['ci_lo']:.4f}, {hit['ci_hi']:.4f}]  p={hit['p_value']:.4f}"
+                )
+                print(
+                    f"  MRR   {mrr['mean_diff']:+.4f}  "
+                    f"95% CI [{mrr['ci_lo']:.4f}, {mrr['ci_hi']:.4f}]  p={mrr['p_value']:.4f}"
+                )
+
     save_report(report, args.report)
     print(f"\nreport -> {args.report}")
 
@@ -266,6 +322,28 @@ def build_parser() -> argparse.ArgumentParser:
     ev.add_argument("--k", type=int, default=5, help="items per agent request")
     ev.add_argument("--sample", type=int, help="evaluate the first N users")
     ev.add_argument("--parallel", type=int, default=8, help="concurrent agent requests")
+    ev.add_argument(
+        "--protocol",
+        choices=("rating", "ranking", "all"),
+        default="ranking",
+        help="rating = 5-fold RMSE/MAE; ranking = LOO holdout; all = both (default: ranking)",
+    )
+    ev.add_argument("--folds", type=int, default=5, help="folds for the rating protocol")
+    ev.add_argument(
+        "--rating-report",
+        default="artifacts/eval_rating.json",
+        help="where to write the rating protocol results",
+    )
+    ev.add_argument(
+        "--baselines",
+        action="store_true",
+        help="also score trivial baselines (mean/popularity/random) in the protocol",
+    )
+    ev.add_argument(
+        "--bootstrap",
+        action="store_true",
+        help="paired bootstrap significance between engines on hit@5 and MRR",
+    )
     ev.add_argument(
         "--agent",
         action="store_true",

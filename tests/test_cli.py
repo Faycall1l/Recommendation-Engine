@@ -49,3 +49,47 @@ def test_eval_cf_flags():
     args = build_parser().parse_args(["eval"])
     assert args.cf is None
     assert not args.all_cf
+
+
+def test_eval_protocol_flags():
+    args = build_parser().parse_args(["eval"])
+    assert args.protocol == "ranking"
+    assert args.folds == 5
+    assert not args.baselines
+    assert not args.bootstrap
+    args = build_parser().parse_args(
+        ["eval", "--protocol", "rating", "--folds", "3", "--baselines", "--bootstrap"]
+    )
+    assert args.protocol == "rating"
+    assert args.folds == 3
+    assert args.baselines
+    assert args.bootstrap
+    args = build_parser().parse_args(["eval", "--protocol", "all"])
+    assert args.protocol == "all"
+
+
+def test_eval_rating_protocol_writes_report(tmp_path, capsys, monkeypatch):
+    import json
+
+    fake = {"mf": {"rmse": 0.95, "rmse_std": 0.02, "mae": 0.7, "mae_std": 0.01, "per_fold": []}}
+    monkeypatch.setattr("recagent.evaluate.cv_rating_eval", lambda *a, **k: fake)
+    main(
+        [
+            "eval",
+            "--protocol",
+            "rating",
+            "--data",
+            str(tmp_path),
+            "--artifacts",
+            str(tmp_path),
+            "--rating-report",
+            str(tmp_path / "eval_rating.json"),
+            "--report",
+            str(tmp_path / "eval_report.json"),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert "5-fold CV explicit-rating prediction" in out
+    report = json.loads((tmp_path / "eval_rating.json").read_text())
+    assert report["protocol"] == "rating"
+    assert report["engines"]["mf"]["rmse"] == 0.95

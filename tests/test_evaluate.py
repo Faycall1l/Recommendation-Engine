@@ -150,7 +150,7 @@ def _taste_group_ratings(seed=0):
     """24 users in 3 taste groups; neighbours share the group's liked items."""
     rng = np.random.default_rng(seed)
     users, items, ratings = [], [], []
-    groups = [(0, range(0, 6), [13, 14]), (8, range(6, 12), [0, 1]), (16, range(12, 16), [2, 3])]
+    groups = [(0, range(6), [13, 14]), (8, range(6, 12), [0, 1]), (16, range(12, 16), [2, 3])]
     for u_start, liked, noise in groups:
         liked = list(liked)
         for offset in range(8):

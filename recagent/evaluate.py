@@ -46,6 +46,7 @@ def cv_rating_eval_from_arrays(
     seed: int = 42,
     factors: int = 64,
     iterations: int = 20,
+    regularization: float = 0.1,
 ) -> dict:
     """5-fold CV explicit-rating prediction: RMSE/MAE mean+-std per engine.
 
@@ -69,7 +70,12 @@ def cv_rating_eval_from_arrays(
         te_cols = np.fromiter((iid_to_idx[i] for i in te_i), dtype=np.int64, count=len(te_i))
         engines = {
             kind: build_engine(
-                kind, train, seed=seed, factors=factors, iterations=iterations
+                kind,
+                train,
+                seed=seed,
+                factors=factors,
+                iterations=iterations,
+                regularization=regularization,
             )
             for kind in kinds
         }
@@ -168,6 +174,12 @@ def hits_from_ranks(per_user_rank: dict[str, int] | dict[int, int], k: int) -> n
     """Per-user hit@k boolean vector from a {user: 1-based rank-or-0} map."""
     uids = sorted(per_user_rank)
     return np.asarray([1 if per_user_rank[u] and per_user_rank[u] <= k else 0 for u in uids])
+
+
+def mrr_from_ranks(per_user_rank: dict[str, int] | dict[int, int]) -> np.ndarray:
+    """Per-user reciprocal rank (0 when the target was not ranked) vector."""
+    uids = sorted(per_user_rank)
+    return np.asarray([1.0 / per_user_rank[u] if per_user_rank[u] else 0.0 for u in uids])
 
 
 def paired_bootstrap(
@@ -286,13 +298,19 @@ def cf_baseline(
     else:
         model = build_cf(kind, matrix)
     ranked: dict[int, list[int]] = {}
-    for user_id in test_items:
+    per_user_rank: dict[int, int] = {}
+    for user_id, target in test_items.items():
         if user_id not in uid_to_idx:
             continue
         top = model.recommend(matrix, uid_to_idx[user_id], n=max(ks))
         ranked[user_id] = [int(item_ids[idx]) for idx, _ in top]
+        try:
+            per_user_rank[user_id] = ranked[user_id].index(target) + 1
+        except ValueError:
+            per_user_rank[user_id] = 0
     metrics = mean_metrics(ranked, test_items, ks)
     metrics["kind"] = kind
+    metrics["per_user_rank"] = {str(u): r for u, r in per_user_rank.items()}
     return metrics
 
 
