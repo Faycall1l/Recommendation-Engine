@@ -45,7 +45,15 @@ class UserBasedCF:
         self.user_means = user_means
         self.centered = centered
         self.similarity = self._similarity()
+        self.similarity_norm = self._normalized_similarity()
         return self
+
+    def _normalized_similarity(self) -> np.ndarray:
+        """Rows of the similarity matrix divided by their L1 (|sim|) weight."""
+        row_sums = np.abs(self.similarity).sum(axis=1)
+        normalized = np.zeros_like(self.similarity)
+        np.divide(self.similarity, row_sums[:, None], out=normalized, where=row_sums[:, None] != 0)
+        return normalized
 
     def _similarity(self) -> np.ndarray:
         """Dense user-user Pearson similarity via cosine on centered ratings."""
@@ -85,3 +93,10 @@ class UserBasedCF:
                 continue
             out.append((int(item_idx), float(scores[item_idx])))
         return out
+
+    def score_all(self) -> np.ndarray:
+        """Dense (n_users x n_items) predicted ratings for every user.
+
+        Matches per-user ``predict``/``recommend`` scoring in one batched op.
+        """
+        return self.user_means[:, None] + self.similarity_norm @ self.centered

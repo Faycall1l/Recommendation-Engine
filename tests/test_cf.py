@@ -95,3 +95,23 @@ def test_userbased_recommend_excludes_rated_and_caps_n():
     assert rated.isdisjoint(ids)
     assert len(out) == 2  # only two unseen items exist
     assert all(isinstance(score, float) for _, score in out)
+
+
+def test_userbased_score_all_batch_matches_predict():
+    matrix = _matrix()
+    cf = UserBasedCF(min_sim=0.0).fit(matrix)
+    all_scores = cf.score_all()
+    assert all_scores.shape == matrix.shape
+    np.testing.assert_allclose(all_scores[0], [4.0, 3.0, 5.0, 4.0])
+    np.testing.assert_allclose(all_scores[2], [3.0, 2.0, 4.0, 3.0])
+    for u in range(3):
+        for j in range(4):
+            assert all_scores[u, j] == pytest.approx(cf.predict(u, j))
+
+
+def test_userbased_score_all_no_neighbours_is_user_mean():
+    matrix = sp.csr_matrix([[5.0, 0.0, 0.0], [0.0, 3.0, 0.0]])
+    cf = UserBasedCF().fit(matrix)
+    all_scores = cf.score_all()
+    np.testing.assert_allclose(all_scores[0], [5.0, 5.0, 5.0])
+    assert np.isfinite(all_scores).all()
