@@ -150,3 +150,24 @@ def test_itembased_predict_hand_case():
     assert cf.predict(0, 2) == pytest.approx(3.0)
     # item3 is similar to nothing -> falls back to the user mean (4.0)
     assert cf.predict(0, 3) == pytest.approx(4.0)
+
+
+def test_itembased_recommend_hand_case():
+    matrix = _matrix()
+    cf = ItemBasedCF(min_sim=0.0).fit(matrix)
+    # user 0 rated {0:5, 1:3}; preds item0=3.0, item1=5.0, item2=3.0, item3=4.0
+    # unseen: item2 (3.0), item3 (4.0) -> item3 first
+    out = cf.recommend(matrix, 0, n=2)
+    assert [idx for idx, _ in out] == [3, 2]
+    assert out[0][1] == pytest.approx(4.0)
+    assert out[1][1] == pytest.approx(3.0)
+
+
+def test_itembased_score_all_matches_predict():
+    cf = ItemBasedCF(min_sim=0.0).fit(_matrix())
+    all_scores = cf.score_all()
+    assert all_scores.shape == cf.matrix.shape
+    assert all_scores[0, 2] == pytest.approx(cf.predict(0, 2))
+    assert all_scores[0, 3] == pytest.approx(cf.predict(0, 3))
+    assert all_scores[2, 0] == pytest.approx(cf.predict(2, 0))
+    assert np.isfinite(all_scores).all()

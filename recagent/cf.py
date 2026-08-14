@@ -187,3 +187,38 @@ class ItemBasedCF:
         if denom == 0.0:
             return float(self.user_means[user_idx])
         return numer / denom
+
+    def _score(self, user_row: np.ndarray) -> np.ndarray:
+        """Predicted ratings for every item given a user's raw rating row."""
+        if self.similarity is None:
+            raise ValueError("fit() must be called before scoring")
+        rated_mask = user_row != 0
+        numer = self.similarity @ user_row
+        denom = np.abs(self.similarity) @ rated_mask.astype(float)
+        preds = np.zeros(self.similarity.shape[0])
+        np.divide(numer, denom, out=preds, where=denom != 0)
+        return preds
+
+    def recommend(self, matrix: sp.csr_matrix, user_idx: int, n: int = 10) -> list[tuple[int, float]]:
+        row = np.asarray(matrix.getrow(user_idx).toarray()).ravel()
+        scores = self._score(row)
+        scores[scores == 0.0] = self.user_means[user_idx]
+        rated = set(matrix.indices[matrix.indptr[user_idx] : matrix.indptr[user_idx + 1]])
+        out: list[tuple[int, float]] = []
+        for item_idx in np.argsort(-scores):
+            if len(out) == n:
+                break
+            if item_idx in rated:
+                continue
+            out.append((int(item_idx), float(scores[item_idx])))
+        return out
+
+    def score_all(self) -> np.ndarray:
+        """Dense (n_users x n_items) predicted ratings for every user."""
+        rows = self.matrix.tocsr()
+        numer = (self.similarity @ rows.T).T  # S @ r_u for each user
+        denom = (np.abs(self.similarity) @ rows.sign().T).T
+        preds = np.zeros_like(numer)
+        np.divide(numer, denom, out=preds, where=denom != 0)
+        preds[denom == 0] = np.broadcast_to(self.user_means[:, None], preds.shape)[denom == 0]
+        return preds
