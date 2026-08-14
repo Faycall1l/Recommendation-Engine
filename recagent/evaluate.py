@@ -368,6 +368,15 @@ def build_test_items(state: dict, data_dir: str, *, min_interactions: int = 5, s
     return {int(u): int(i) for u, i in zip(test_users, test_items) if int(u) in known}
 
 
+def genre_precision(share: dict[str, float], genre: str) -> float:
+    """Case-insensitive lookup in a genre-share dict (meta uses title-case)."""
+    genre = genre.lower()
+    for key, value in share.items():
+        if key.lower() == genre:
+            return value
+    return 0.0
+
+
 def genre_share(state: dict, ranked: dict[int, list[int]]) -> dict[str, float]:
     """Share of returned items whose genres include each genre."""
     meta = state["items_meta"]

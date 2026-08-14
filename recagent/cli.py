@@ -154,6 +154,7 @@ def _cmd_eval(args: argparse.Namespace) -> None:
         cf_baseline,
         cf_lists,
         constraint_eval,
+        genre_precision,
         genre_share,
         save_report,
     )
@@ -210,12 +211,12 @@ def _cmd_eval(args: argparse.Namespace) -> None:
             agent_share = genre_share(state, agent_lists)
             cf_share = genre_share(state, cf_top)
             print(f"\nConstraint compliance ({args.genre}) — CF is genre-blind")
-            print(f"  agent genre precision: {agent_share.get(args.genre.lower(), 0.0):.4f}")
-            print(f"  CF    genre precision: {cf_share.get(args.genre.lower(), 0.0):.4f}")
+            print(f"  agent genre precision: {genre_precision(agent_share, args.genre):.4f}")
+            print(f"  CF    genre precision: {genre_precision(cf_share, args.genre):.4f}")
             report["constraint"] = {
                 "genre": args.genre,
-                "agent_precision": agent_share.get(args.genre.lower(), 0.0),
-                "cf_precision": cf_share.get(args.genre.lower(), 0.0),
+                "agent_precision": genre_precision(agent_share, args.genre),
+                "cf_precision": genre_precision(cf_share, args.genre),
                 "per_user": [
                     {"user_id": u, "cf": ids, "agent": agent_lists.get(u, [])} for u, ids in details
                 ],

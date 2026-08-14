@@ -6,6 +6,7 @@ from recagent.cf import build_cf
 from recagent.evaluate import (
     cf_baseline,
     cv_rating_eval_from_arrays,
+    genre_precision,
     hits_from_ranks,
     loo_ranking_eval_from_arrays,
     mean_metrics,
@@ -247,3 +248,10 @@ def test_paired_bootstrap_validates_input():
         paired_bootstrap([1.0, 2.0], [1.0])
     with pytest.raises(ValueError):
         paired_bootstrap([], [])
+
+
+def test_genre_precision_is_case_insensitive():
+    share = {"Film-Noir": 1.0, "Sci-Fi": 0.5}
+    assert genre_precision(share, "film-noir") == 1.0
+    assert genre_precision(share, "sci-fi") == 0.5
+    assert genre_precision(share, "comedy") == 0.0
