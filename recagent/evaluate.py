@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -107,6 +108,14 @@ def cv_rating_eval(data_dir: str | Path = "data", **kwargs) -> dict:
     return cv_rating_eval_from_arrays(users, items, ratings, **kwargs)
 
 
+def _head_item_ids(items: np.ndarray, fraction: float) -> set[int]:
+    """The ``fraction`` most-popular raw item ids (by rating count, ties by id)."""
+    counts = Counter(items)
+    ordered = sorted(counts, key=lambda item_id: (-counts[item_id], item_id))
+    n_head = round(fraction * len(ordered))
+    return {int(item_id) for item_id in ordered[:n_head]}
+
+
 def loo_ranking_eval_from_arrays(
     users: np.ndarray,
     items: np.ndarray,
@@ -120,13 +129,17 @@ def loo_ranking_eval_from_arrays(
     ks: tuple[int, ...] = KS,
     user_sample: int | None = None,
     engine_kwargs: dict[str, dict] | None = None,
+    exclude_head: float | None = None,
 ) -> dict:
     """Leave-one-out ranking eval across any ranking engines.
 
     One held-out interaction per user (same split as training), scored with
     the full metric set from :func:`mean_metrics`. ``engine_kwargs`` maps a
     kind to per-engine fit kwargs (e.g. ``{"mf": {...}}``) layered over the
-    shared defaults. Returns a dict keyed by engine kind.
+    shared defaults. ``exclude_head`` (0 <= f < 1) drops test targets that are
+    among the ``f`` most-popular items — the Cremonesi–Koren–Turrin (2010)
+    debias that stops raw popularity from dominating the protocol. Returns a
+    dict keyed by engine kind.
     """
     from recagent.engines import RANKING_ENGINES, build_engine
 
@@ -134,6 +147,8 @@ def loo_ranking_eval_from_arrays(
     for kind in kinds:
         if kind not in RANKING_ENGINES:
             raise ValueError(f"ranking protocol supports {RANKING_ENGINES}, got {kind!r}")
+    if exclude_head is not None and not 0.0 <= exclude_head < 1.0:
+        raise ValueError(f"exclude_head must be in [0, 1), got {exclude_head!r}")
     (tr_u, tr_i, tr_r), (te_u, te_i) = leave_one_out(
         users, items, ratings, min_interactions=min_interactions, seed=seed
     )
@@ -145,6 +160,9 @@ def loo_ranking_eval_from_arrays(
         kwargs.update(engine_kwargs.get(kind, {}))
         engines[kind] = build_engine(kind, matrix, **kwargs)
     test_items = {int(u): int(i) for u, i in zip(te_u, te_i) if int(u) in uid_to_idx}
+    if exclude_head is not None:
+        head = _head_item_ids(items, exclude_head)
+        test_items = {u: i for u, i in test_items.items() if i not in head}
     if user_sample is not None:
         test_items = {u: test_items[u] for u in sorted(test_items)[:user_sample]}
     ranked: dict[str, dict[int, list[int]]] = {kind: {} for kind in kinds}
@@ -162,6 +180,7 @@ def loo_ranking_eval_from_arrays(
     for kind in kinds:
         metrics = mean_metrics(ranked[kind], test_items, ks)
         metrics["kind"] = kind
+        metrics["exclude_head"] = exclude_head
         metrics["per_user_rank"] = {str(u): r for u, r in per_user_rank[kind].items()}
         out[kind] = metrics
     return out

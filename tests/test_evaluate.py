@@ -4,6 +4,7 @@ import scipy.sparse as sp
 
 from recagent.cf import build_cf
 from recagent.evaluate import (
+    _head_item_ids,
     cf_baseline,
     cv_rating_eval_from_arrays,
     genre_precision,
@@ -255,3 +256,35 @@ def test_genre_precision_is_case_insensitive():
     assert genre_precision(share, "film-noir") == 1.0
     assert genre_precision(share, "sci-fi") == 0.5
     assert genre_precision(share, "comedy") == 0.0
+
+
+def test_head_item_ids_marks_popular_items():
+    items = np.asarray([10, 10, 10, 10, 10, 20, 30, 40, 50])
+    assert _head_item_ids(items, 0.25) == {10}  # 1 of 4 distinct items
+    assert _head_item_ids(items, 0.0) == set()
+    assert _head_item_ids(items, 0.75) == {10, 20, 30, 40}  # top 4
+
+
+def test_loo_exclude_head_removes_popular_targets():
+    # item 10 is overwhelmingly the most popular; some LOO targets are 10
+    users = np.asarray(
+        [1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3]
+    )
+    items = np.asarray(
+        [10, 10, 10, 20, 30, 10, 40, 50, 60, 70, 10, 80, 90, 100, 110]
+    )
+    ratings = np.full(len(users), 4.0)
+    full = loo_ranking_eval_from_arrays(users, items, ratings, kinds=("popular",))
+    tail = loo_ranking_eval_from_arrays(
+        users, items, ratings, kinds=("popular",), exclude_head=0.1
+    )
+    assert tail["popular"]["n_users"] < full["popular"]["n_users"]
+    assert tail["popular"]["exclude_head"] == 0.1
+
+
+def test_loo_exclude_head_validates_range():
+    users, items, ratings = _taste_group_ratings()
+    with pytest.raises(ValueError):
+        loo_ranking_eval_from_arrays(users, items, ratings, exclude_head=1.0)
+    with pytest.raises(ValueError):
+        loo_ranking_eval_from_arrays(users, items, ratings, exclude_head=-0.5)
