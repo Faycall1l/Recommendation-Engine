@@ -115,3 +115,18 @@ def test_userbased_score_all_no_neighbours_is_user_mean():
     all_scores = cf.score_all()
     np.testing.assert_allclose(all_scores[0], [5.0, 5.0, 5.0])
     assert np.isfinite(all_scores).all()
+
+
+def test_userbased_roundtrip_save_load(tmp_path):
+    matrix = _matrix()
+    original = UserBasedCF(min_sim=0.1).fit(matrix)
+    path = tmp_path / "model_cf.npz"
+    original.save(path)
+
+    restored = UserBasedCF.load(path)
+    assert restored.min_sim == pytest.approx(0.1)
+    np.testing.assert_allclose(restored.user_means, original.user_means)
+    np.testing.assert_allclose(restored.similarity, original.similarity)
+    np.testing.assert_allclose(restored.score_all(), original.score_all())
+    np.testing.assert_allclose(restored.centered.toarray(), original.centered.toarray())
+    assert restored.recommend(matrix, 0, n=2) == original.recommend(matrix, 0, n=2)

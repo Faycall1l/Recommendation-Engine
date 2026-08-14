@@ -15,6 +15,8 @@ tool registry, CLI, eval, agent — treats them identically.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import scipy.sparse as sp
 
@@ -100,3 +102,34 @@ class UserBasedCF:
         Matches per-user ``predict``/``recommend`` scoring in one batched op.
         """
         return self.user_means[:, None] + self.similarity_norm @ self.centered
+
+    def save(self, path: str | Any) -> UserBasedCF:
+        from pathlib import Path
+
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        coo = self.centered.tocoo()
+        np.savez(
+            path,
+            min_sim=self.min_sim,
+            user_means=self.user_means,
+            similarity=self.similarity,
+            c_data=coo.data,
+            c_row=coo.row,
+            c_col=coo.col,
+            c_shape=np.asarray(coo.shape),
+        )
+        return self
+
+    @classmethod
+    def load(cls, path: str | Any) -> UserBasedCF:
+        saved = np.load(path)
+        obj = cls(min_sim=float(saved["min_sim"]))
+        obj.user_means = saved["user_means"]
+        obj.centered = sp.coo_matrix(
+            (saved["c_data"], (saved["c_row"], saved["c_col"])),
+            shape=tuple(saved["c_shape"]),
+        ).tocsr()
+        obj.similarity = saved["similarity"]
+        obj.similarity_norm = obj._normalized_similarity()
+        return obj
