@@ -1,3 +1,98 @@
 # Recommendation-Engine
 
-Collaborative filtering candidates, refined by an agentic LLM. Placeholder README — full docs land with the demo branch.
+Collaborative filtering candidates, refined by an agentic LLM (Gemma-4 on vLLM).
+
+## Engines
+
+Three candidate engines share one interface (`fit` / `recommend(matrix, user_idx, n)`):
+
+| kind    | implementation | notes |
+|---------|----------------|-------|
+| `als`   | `implicit.ALS` | weighted matrix factorisation, the classic baseline |
+| `user`  | `recagent.cf.UserBasedCF` | memory-based, implemented from scratch in numpy |
+| `item`  | `recagent.cf.ItemBasedCF` | memory-based, implemented from scratch in numpy |
+
+The default engine is **user-based**. Choose with `--cf` on `train`.
+
+### Memory-based methods (`recagent/cf.py`)
+
+Both are classic neighbourhood methods over the explicit 1–5 rating matrix,
+implemented from scratch (no sklearn/surprise).
+
+**User-based (Pearson correlation)** — ratings are mean-centred per user
+(`r_ui - μ_u`); user similarity is cosine on the centred rows, which equals
+Pearson correlation restricted to co-rated items:
+
+```
+sim(u, v) = Σ_i (r_ui - μ_u)(r_vi - μ_v) / (‖r_u - μ_u‖ · ‖r_v - μ_v‖)
+r̂_ui = μ_u + Σ_v sim(u, v)·(r_vi - μ_v) / Σ_v |sim(u, v)|
+```
+
+Negatives are floored to 0 (only positively correlated users vote). A single
+sparse row-normalised matmul scores every item; `score_all()` batches the same
+math into a dense `(n_users × n_items)` matrix for eval.
+
+**Item-based (adjusted cosine)** — columns are mean-centred per item, then
+`S = ĈᵀĈ` on the column-normalised matrix:
+
+```
+sim(i, j) = Σ_u (r_ui - μ_i)(r_uj - μ_j) / (‖r_i - μ_i‖ · ‖r_j - μ_j‖)
+r̂_ui = Σ_j∈rated(u) sim(i, j)·r_uj / Σ_j∈rated(u) |sim(i, j)|
+```
+
+Prediction uses only the user's own ratings as evidence, falling back to their
+mean when no similar item is in the profile.
+
+## Agentic reranker
+
+`recagent chat` / `RecClient.recommend` run a **plan-then-execute** agent
+(Gemma-4 via pydantic-ai) instead of in-loop tool calling:
+
+1. `build_plan` — parse `user_id`, `k`, and any hard constraints (e.g. genre).
+2. `build_evidence` — deterministic `ToolRegistry` calls: user profile,
+   collaborative-filtering candidates, item metadata, and — for cold-start
+   users or rare genres — popularity priors and `similar_items` chains.
+3. one structured-output LLM call emits a ranked `RankedItems` list.
+4. `_clean_items` guardrails drop hallucinations, constraint violations and
+   duplicates, capping the list at `k`.
+
+This sidesteps vLLM's flaky in-loop tool template (repeated identical calls,
+empty parts) while keeping the reasoning signal.
+
+## Quickstart
+
+```bash
+python -m pip install -e .
+python -m recagent.cli train --cf user           # user-based (default)
+python -m recagent.cli recommend 196             # engine + top-n
+python -m recagent.cli train --cf als            # switch engines
+python -m recagent.cli eval --all-cf --sample 100 --agent
+python -m recagent.cli serve --port 8000         # REST gateway (docs at /docs)
+```
+
+LLM config lives in `.env` (`ATHAR_AGENT__*`, see `.env.example`); without it
+`RecClient` degrades to pure CF.
+
+## SDK
+
+```python
+from recagent_sdk import RecommendClient
+
+with RecommendClient("http://127.0.0.1:8000") as client:
+    print(client.recommend(user_id=196, k=5, filters={"genre": "Sci-Fi"}))
+```
+
+## Results (100-user LOO holdout, `results/eval_report.json`)
+
+| engine  | HR@1 | HR@3 | HR@5 | HR@10 |
+|---------|------|------|------|-------|
+| als     | 0.04 | 0.09 | 0.12 | 0.24 |
+| user    | 0.03 | 0.11 | 0.12 | 0.16 |
+| item    | 0.00 | 0.00 | 0.00 | 0.01 |
+| agent   | 0.04 | 0.09 | 0.15 | —     |
+
+Honest read: ALS remains the strongest raw LOO predictor; the from-scratch
+user-based method is competitive at HR@3/5; item-based collapses because the
+held-out item is the only evidence for its neighbours. The agentic reranker
+matches ALS at HR@1/3 and edges ahead at HR@5 — and is the only path that can
+honour hard constraints (verified 5/5 genre compliance live).
