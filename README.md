@@ -170,8 +170,26 @@ leave-one-out, correlation-based item-kNN performs extremely poorly, and RMSE
 gains do not translate into top-N accuracy. Paired bootstrap (2000 resamples,
 `results/eval_bootstrap.json`): ALS is significantly better than every engine
 on hit@5 and MRR (all p<0.001); user-vs-popularity is a statistical tie
-(p=0.47). The honest fix for future runs is to exclude the top-popular head
-items from the LOO test set.
+(p=0.47).
+
+The fix that finding calls for is implemented: **debiased long-tail LOO**
+excludes the top-2% most-popular head items from the test set
+(`--exclude-head`, `results/eval_ranking_longtail.json`). 170 of 943 held-out
+targets were head items; on the remaining 773 users:
+
+| engine  | HR@10 | HR@5  | NDCG@10 | MRR    |
+|---------|-------|-------|---------|--------|
+| als     | 0.2186| 0.1358| 0.1202  | 0.0908 |
+| user    | 0.0556| 0.0285| 0.0251  | 0.0160 |
+| mf      | 0.0401| 0.0207| 0.0174  | 0.0106 |
+| popular | 0.0078| 0.0013| 0.0026  | 0.0012 |
+| random  | 0.0078| 0.0052| 0.0038  | 0.0026 |
+| item    | 0.0026| 0.0013| 0.0009  | 0.0005 |
+
+Popularity collapses to random parity (and *below* random at HR@5), exposing
+its earlier strength as an artifact of head items being the held-out targets.
+ALS stays the strongest ranker on the strictly harder long-tail task; the
+memory-based `user` and explicit `mf` engines now beat raw popularity.
 
 ### Agentic reranker — 200-user sample, k=5 (`results/eval_agent200.json`)
 

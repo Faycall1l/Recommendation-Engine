@@ -74,7 +74,49 @@
         "mrr": 0.0015
       }
     },
-    "verdict": "implicit ALS (0.285) dominates; popularity (0.137) beats every memory-based engine and explicit MF (0.047); item-based CF collapses (0.002). This is the well-documented Cremonesi/Koren/Turrin 2010 finding: under plain leave-one-out, a non-personalized popularity baseline matches sophisticated algorithms, RMSE does not imply top-N accuracy, and correlation-based item-kNN performs extremely poorly. Standard fix: exclude top-popular head items from the LOO test set."
+    "verdict": "implicit ALS (0.285) dominates; popularity (0.137) beats every memory-based engine and explicit MF (0.047); item-based CF collapses (0.002). This is the well-documented Cremonesi/Koren/Turrin 2010 finding: under plain leave-one-out, a non-personalized popularity baseline matches sophisticated algorithms, RMSE does not imply top-N accuracy, and correlation-based item-kNN performs extremely poorly. The debias was then applied: see loo_ranking_longtail."
+  },
+  "loo_ranking_longtail": {
+    "protocol": "leave-one-out with top-2% popular head items excluded (Cremonesi/Koren/Turrin 2010 debias), 773 of 943 users remain",
+    "engine_hr10": {
+      "als": {
+        "hr10": 0.2186,
+        "hr5": 0.1358,
+        "ndcg10": 0.1202,
+        "mrr": 0.0908
+      },
+      "user": {
+        "hr10": 0.0556,
+        "hr5": 0.0285,
+        "ndcg10": 0.0251,
+        "mrr": 0.016
+      },
+      "item": {
+        "hr10": 0.0026,
+        "hr5": 0.0013,
+        "ndcg10": 0.0009,
+        "mrr": 0.0005
+      },
+      "mf": {
+        "hr10": 0.0401,
+        "hr5": 0.0207,
+        "ndcg10": 0.0174,
+        "mrr": 0.0106
+      },
+      "popular": {
+        "hr10": 0.0078,
+        "hr5": 0.0013,
+        "ndcg10": 0.0026,
+        "mrr": 0.0012
+      },
+      "random": {
+        "hr10": 0.0078,
+        "hr5": 0.0052,
+        "ndcg10": 0.0038,
+        "mrr": 0.0026
+      }
+    },
+    "verdict": "excluding the head changes the picture exactly as the literature predicts: popularity collapses from HR@10 0.137 to 0.008 — parity with random, and below random at HR@5 (0.0013 vs 0.0052) — so its earlier 'strength' was an artifact of head items being the held-out targets. ALS remains the strongest ranker (HR@10 0.219), now on a strictly harder task. user (0.056) and mf (0.040) beat popularity on the tail; item stays at floor."
   },
   "bootstrap": {
     "protocol": "paired-bootstrap",
@@ -360,5 +402,5 @@
       "finding": "popularity (TopPop) matches SOTA RMSE-oriented algorithms under standard LOO (recall@10 ~0.29 vs AsySVD 0.28); correlation-based item-kNN performs extremely poorly under LOO; RMSE gains do not translate to top-N accuracy; test sets should exclude top-popular head items to avoid biasing toward non-personalized baselines."
     }
   },
-  "overall_verdict": "The system's from-scratch engines are within the published default-parameter range on ml-100k rating prediction (RMSE 0.987-1.009 vs published 0.93-0.98 for the k-NN family), closing most of the gap that tuned/external implementations get. Its implicit ALS is the strongest LOO ranker. The agentic layer does not help raw ranking on this data but provides the one thing pure CF cannot: explicit constraint compliance (1.0 genre precision vs 0.04). For honest LOO numbers, future runs should exclude the top-2% popular head items."
+  "overall_verdict": "The system's from-scratch engines are within the published default-parameter range on ml-100k rating prediction (RMSE 0.987-1.009 vs published 0.93-0.98 for the k-NN family), closing most of the gap that tuned/external implementations get. Its implicit ALS is the strongest LOO ranker both with and without the head-item debias; the debiased run (excluding the top-2% popular head) shows popularity at random-parity on the long tail, confirming ALS's edge is real and not an artifact of recommending head items. The agentic layer does not help raw ranking on this data but provides the one thing pure CF cannot: explicit constraint compliance (1.0 genre precision vs 0.04)."
 }

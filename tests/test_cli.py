@@ -82,6 +82,13 @@ def test_eval_protocol_flags():
     assert args.protocol == "all"
 
 
+def test_eval_exclude_head_flag():
+    args = build_parser().parse_args(["eval", "--exclude-head", "0.02"])
+    assert args.exclude_head == 0.02
+    args = build_parser().parse_args(["eval"])
+    assert args.exclude_head is None
+
+
 def test_eval_rating_protocol_writes_report(tmp_path, capsys, monkeypatch):
     import json
 

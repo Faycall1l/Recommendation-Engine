@@ -108,7 +108,7 @@ def cv_rating_eval(data_dir: str | Path = "data", **kwargs) -> dict:
     return cv_rating_eval_from_arrays(users, items, ratings, **kwargs)
 
 
-def _head_item_ids(items: np.ndarray, fraction: float) -> set[int]:
+def head_item_ids(items: np.ndarray, fraction: float) -> set[int]:
     """The ``fraction`` most-popular raw item ids (by rating count, ties by id)."""
     counts = Counter(items)
     ordered = sorted(counts, key=lambda item_id: (-counts[item_id], item_id))
@@ -161,7 +161,7 @@ def loo_ranking_eval_from_arrays(
         engines[kind] = build_engine(kind, matrix, **kwargs)
     test_items = {int(u): int(i) for u, i in zip(te_u, te_i) if int(u) in uid_to_idx}
     if exclude_head is not None:
-        head = _head_item_ids(items, exclude_head)
+        head = head_item_ids(items, exclude_head)
         test_items = {u: i for u, i in test_items.items() if i not in head}
     if user_sample is not None:
         test_items = {u: test_items[u] for u in sorted(test_items)[:user_sample]}

@@ -4,10 +4,10 @@ import scipy.sparse as sp
 
 from recagent.cf import build_cf
 from recagent.evaluate import (
-    _head_item_ids,
     cf_baseline,
     cv_rating_eval_from_arrays,
     genre_precision,
+    head_item_ids,
     hits_from_ranks,
     loo_ranking_eval_from_arrays,
     mean_metrics,
@@ -260,9 +260,9 @@ def test_genre_precision_is_case_insensitive():
 
 def test_head_item_ids_marks_popular_items():
     items = np.asarray([10, 10, 10, 10, 10, 20, 30, 40, 50])
-    assert _head_item_ids(items, 0.25) == {10}  # 1 of 4 distinct items
-    assert _head_item_ids(items, 0.0) == set()
-    assert _head_item_ids(items, 0.75) == {10, 20, 30, 40}  # top 4
+    assert head_item_ids(items, 0.25) == {10}  # 1 of 4 distinct items
+    assert head_item_ids(items, 0.0) == set()
+    assert head_item_ids(items, 0.75) == {10, 20, 30, 40}  # top 4
 
 
 def test_loo_exclude_head_removes_popular_targets():

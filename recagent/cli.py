@@ -170,6 +170,17 @@ def _cmd_eval(args: argparse.Namespace) -> None:
     test_items = build_test_items(
         state, args.data, min_interactions=args.min_interactions, seed=args.seed
     )
+    if args.exclude_head is not None:
+        from recagent.data import fetch_movielens, load_ratings
+        from recagent.evaluate import head_item_ids
+
+        if not 0.0 <= args.exclude_head < 1.0:
+            raise SystemExit(f"--exclude-head must be in [0, 1), got {args.exclude_head}")
+        _, items, _ = load_ratings(fetch_movielens(args.data))
+        head = head_item_ids(items, args.exclude_head)
+        before = len(test_items)
+        test_items = {u: i for u, i in test_items.items() if i not in head}
+        print(f"excluded {before - len(test_items)} head-item test targets")
     if args.sample:
         test_items = {u: test_items[u] for u in sorted(test_items)[: args.sample]}
 
@@ -399,6 +410,11 @@ def build_parser() -> argparse.ArgumentParser:
     ev.add_argument(
         "--genre",
         help="constraint-eval: hold every agent item to this genre, compare genre precision vs CF",
+    )
+    ev.add_argument(
+        "--exclude-head",
+        type=float,
+        help="Cremonesi debias: drop test targets in the top X fraction of most-popular items",
     )
 
     serve = sub.add_parser(
