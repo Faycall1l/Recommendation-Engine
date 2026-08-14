@@ -1,0 +1,69 @@
+{
+  "dataset": "ml-100k",
+  "n_users_eval": 100,
+  "note": "Leave-one-out holdout (same split as training). Memory-based CF is implemented from scratch in numpy; item-based is known to collapse under LOO where the held-out item is the only evidence.",
+  "cf_baseline": {
+    "als": {
+      "n_users": 100,
+      "hr": {
+        "1": 0.04,
+        "3": 0.09,
+        "5": 0.12,
+        "10": 0.24
+      },
+      "ndcg": {
+        "1": 0.04,
+        "3": 0.0715,
+        "5": 0.0836,
+        "10": 0.1233
+      },
+      "kind": "als"
+    },
+    "user": {
+      "n_users": 100,
+      "hr": {
+        "1": 0.03,
+        "3": 0.11,
+        "5": 0.12,
+        "10": 0.16
+      },
+      "ndcg": {
+        "1": 0.03,
+        "3": 0.0779,
+        "5": 0.0822,
+        "10": 0.0949
+      },
+      "kind": "user"
+    },
+    "item": {
+      "n_users": 100,
+      "hr": {
+        "1": 0.0,
+        "3": 0.0,
+        "5": 0.0,
+        "10": 0.01
+      },
+      "ndcg": {
+        "1": 0.0,
+        "3": 0.0,
+        "5": 0.0,
+        "10": 0.003
+      },
+      "kind": "item"
+    }
+  },
+  "agent": {
+    "n_users": 100,
+    "hr": {
+      "1": 0.04,
+      "3": 0.09,
+      "5": 0.15
+    },
+    "ndcg": {
+      "1": 0.04,
+      "3": 0.0689,
+      "5": 0.0939
+    }
+  },
+  "agent_ks": "(1,3,5)"
+}
