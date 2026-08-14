@@ -44,15 +44,16 @@ def _cmd_recommend(args: argparse.Namespace) -> None:
     model = state["model"]
     matrix = state["matrix"]
     uid_to_idx = state["uid_to_idx"]
-    iid_to_idx = state["iid_to_idx"]
     items_meta = state["items_meta"]
+    item_ids = state["item_ids"]
 
     user_id = args.user
     if user_id not in uid_to_idx:
         raise SystemExit(f"unknown user id: {user_id}")
     user_idx = uid_to_idx[user_id]
+    print(f"engine: {state.get('cf_kind', 'als')}-based CF for user {user_id}")
     for item_idx, score in model.recommend(matrix, user_idx, n=args.n):
-        item_id = iid_to_idx[item_idx]
+        item_id = item_ids[item_idx]
         info = items_meta.get(item_id, {})
         print(f"{info.get('title', item_id):<48} {score:8.4f}")
 
