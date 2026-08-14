@@ -171,3 +171,19 @@ def test_itembased_score_all_matches_predict():
     assert all_scores[0, 3] == pytest.approx(cf.predict(0, 3))
     assert all_scores[2, 0] == pytest.approx(cf.predict(2, 0))
     assert np.isfinite(all_scores).all()
+
+
+def test_itembased_roundtrip_save_load(tmp_path):
+    matrix = _matrix()
+    original = ItemBasedCF(min_sim=0.1).fit(matrix)
+    path = tmp_path / "model_cf.npz"
+    original.save(path)
+
+    restored = ItemBasedCF.load(path)
+    assert restored.min_sim == pytest.approx(0.1)
+    np.testing.assert_allclose(restored.similarity, original.similarity)
+    np.testing.assert_allclose(restored.user_means, original.user_means)
+    np.testing.assert_allclose(restored.item_means, original.item_means)
+    assert restored.predict(0, 2) == pytest.approx(original.predict(0, 2))
+    assert restored.recommend(matrix, 0, n=2) == original.recommend(matrix, 0, n=2)
+    np.testing.assert_allclose(restored.score_all(), original.score_all())

@@ -222,3 +222,35 @@ class ItemBasedCF:
         np.divide(numer, denom, out=preds, where=denom != 0)
         preds[denom == 0] = np.broadcast_to(self.user_means[:, None], preds.shape)[denom == 0]
         return preds
+
+    def save(self, path: str | Any) -> ItemBasedCF:
+        from pathlib import Path
+
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        coo = self.matrix.tocoo()
+        np.savez(
+            path,
+            min_sim=self.min_sim,
+            item_means=self.item_means,
+            user_means=self.user_means,
+            similarity=self.similarity,
+            m_data=coo.data,
+            m_row=coo.row,
+            m_col=coo.col,
+            m_shape=np.asarray(coo.shape),
+        )
+        return self
+
+    @classmethod
+    def load(cls, path: str | Any) -> ItemBasedCF:
+        saved = np.load(path)
+        obj = cls(min_sim=float(saved["min_sim"]))
+        obj.matrix = sp.coo_matrix(
+            (saved["m_data"], (saved["m_row"], saved["m_col"])),
+            shape=tuple(saved["m_shape"]),
+        ).tocsr()
+        obj.item_means = saved["item_means"]
+        obj.user_means = saved["user_means"]
+        obj.similarity = saved["similarity"]
+        return obj
