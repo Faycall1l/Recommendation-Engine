@@ -145,12 +145,24 @@ def _cmd_eval(args: argparse.Namespace) -> None:
     if args.sample:
         test_items = {u: test_items[u] for u in sorted(test_items)[: args.sample]}
 
-    cf = cf_baseline(state, test_items)
-    print(f"CF baseline (ALS) over {cf['n_users']} users")
-    for k in cf["hr"]:
-        print(f"  HR@{k:<2} {cf['hr'][k]:.4f}   NDCG@{k:<2} {cf['ndcg'][k]:.4f}")
+    if args.all_cf:
+        kinds = ["als", "user", "item"]
+    elif args.cf:
+        kinds = [args.cf]
+    else:
+        kinds = [state.get("cf_kind", "als")]
 
-    report = {"dataset": "ml-100k", "cf_baseline": cf, "agent": None}
+    cf_results: dict[str, dict] = {}
+    for kind in kinds:
+        cf = cf_baseline(state, test_items, kind=kind)
+        cf_results[kind] = cf
+        print(f"CF baseline ({kind}) over {cf['n_users']} users")
+        for k in cf["hr"]:
+            print(f"  HR@{k:<2} {cf['hr'][k]:.4f}   NDCG@{k:<2} {cf['ndcg'][k]:.4f}")
+
+    primary = kinds[0]
+    cf = cf_results[primary]
+    report = {"dataset": "ml-100k", "cf_baseline": cf_results, "agent": None}
     if args.agent:
         config = load_llm_config()
         if not config.enabled:
@@ -258,6 +270,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--agent",
         action="store_true",
         help="also run the agentic reranker (requires a vLLM endpoint)",
+    )
+    ev.add_argument(
+        "--cf",
+        choices=("als", "user", "item"),
+        help="CF engine for the baseline (default: the engine the artefacts were trained with)",
+    )
+    ev.add_argument(
+        "--all-cf",
+        action="store_true",
+        help="run the baseline with every engine (als, user, item)",
     )
     ev.add_argument(
         "--genre",

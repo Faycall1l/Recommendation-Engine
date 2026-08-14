@@ -53,17 +53,43 @@ def mean_metrics(
     }
 
 
-def cf_baseline(state: dict, test_items: dict[int, int], ks: tuple[int, ...] = KS) -> dict:
-    """Top-``max(ks)`` items from ALS, no agent involved."""
-    model, matrix = state["model"], state["matrix"]
+def cf_baseline(
+    state: dict,
+    test_items: dict[int, int],
+    *,
+    kind: str = "als",
+    ks: tuple[int, ...] = KS,
+    factors: int = 64,
+    iterations: int = 20,
+) -> dict:
+    """Top-``max(ks)`` items from a raw CF engine, no agent involved.
+
+    ``kind`` selects the engine: ``als``, ``user`` or ``item``. If it matches
+    the engine the state was trained with, the persisted model is reused;
+    otherwise the engine is fitted on demand from the state matrix.
+    """
+    from recagent.cf import CF_KINDS, build_cf
+    from recagent.model import Recommender
+
+    if kind not in CF_KINDS:
+        raise ValueError(f"kind must be one of {CF_KINDS}, got {kind!r}")
+    matrix = state["matrix"]
     uid_to_idx, item_ids = state["uid_to_idx"], state["item_ids"]
+    if kind == state.get("cf_kind", "als"):
+        model = state["model"]
+    elif kind == "als":
+        model = Recommender(factors=factors, iterations=iterations).fit(matrix)
+    else:
+        model = build_cf(kind, matrix)
     ranked: dict[int, list[int]] = {}
     for user_id in test_items:
         if user_id not in uid_to_idx:
             continue
         top = model.recommend(matrix, uid_to_idx[user_id], n=max(ks))
         ranked[user_id] = [int(item_ids[idx]) for idx, _ in top]
-    return mean_metrics(ranked, test_items, ks)
+    metrics = mean_metrics(ranked, test_items, ks)
+    metrics["kind"] = kind
+    return metrics
 
 
 async def _agent_ids(agent: RecAgent, request: str, deps: ToolRegistry, retries: int = 2) -> list[int]:

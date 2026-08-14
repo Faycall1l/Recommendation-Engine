@@ -1,7 +1,24 @@
 import numpy as np
+import pytest
+import scipy.sparse as sp
 
+from recagent.cf import build_cf
 from recagent.evaluate import cf_baseline, mean_metrics
 from tests.test_tools import build_state
+
+
+def _user_state():
+    matrix = sp.csr_matrix([[5.0, 3.0, 0.0, 0.0], [0.0, 1.0, 3.0, 0.0], [2.0, 0.0, 4.0, 0.0]])
+    return {
+        "model": build_cf("user", matrix),
+        "matrix": matrix,
+        "uid_to_idx": {1: 0, 2: 1, 3: 2},
+        "iid_to_idx": {11: 0, 12: 1, 13: 2, 14: 3},
+        "user_ids": [1, 2, 3],
+        "item_ids": [11, 12, 13, 14],
+        "items_meta": {},
+        "cf_kind": "user",
+    }
 
 
 def test_mean_metrics_hits_and_ranking():
@@ -31,3 +48,30 @@ def test_cf_baseline_runs_and_is_deterministic():
     b = cf_baseline(state, test_items, ks=(1, 5, 10))
     assert a == b
     assert a["n_users"] <= 3
+
+
+def test_cf_baseline_user_engine_rankings():
+    state = _user_state()
+    test_items = {1: 13, 2: 12, 3: 11}
+    # user 1 (idx 0): unseen items 13 (5.0) and 14 (4.0) -> 13 at rank 1
+    metrics = cf_baseline(state, test_items, kind="user", ks=(1, 3, 5, 10))
+    assert metrics["kind"] == "user"
+    assert metrics["n_users"] == 3
+    assert metrics["hr"]["1"] == round(1 / 3, 4)
+    # user 2 (idx 1) target 12 is rated -> missed; user 3 (idx 2) target 11 rated -> missed
+    assert metrics["hr"]["10"] == round(1 / 3, 4)
+
+
+def test_cf_baseline_item_engine_rankings():
+    state = _user_state()
+    test_items = {1: 13, 2: 12, 3: 11}
+    # item engine ranks user1's unseen as 14 (4.0) then 13 (3.0) -> 13 at rank 2
+    metrics = cf_baseline(state, test_items, kind="item", ks=(1, 3, 5, 10))
+    assert metrics["kind"] == "item"
+    assert metrics["hr"]["1"] == 0.0
+    assert metrics["hr"]["3"] == round(1 / 3, 4)
+
+
+def test_cf_baseline_rejects_unknown_kind():
+    with pytest.raises(ValueError):
+        cf_baseline(_user_state(), {1: 13}, kind="bogus")

@@ -37,3 +37,15 @@ def test_recommend_prints_engine_kind(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "user-based CF" in out
     assert "Twin Peaks" in out
+
+
+def test_eval_cf_flags():
+    args = build_parser().parse_args(["eval", "--cf", "item"])
+    assert args.cf == "item"
+    assert not args.all_cf
+    args = build_parser().parse_args(["eval", "--all-cf"])
+    assert args.all_cf
+    assert args.cf is None
+    args = build_parser().parse_args(["eval"])
+    assert args.cf is None
+    assert not args.all_cf
