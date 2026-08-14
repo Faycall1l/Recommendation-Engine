@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
+import scipy.sparse as sp
 
 from recagent.agent import RecAgent
-from recagent.data import fetch_movielens, leave_one_out, load_ratings
+from recagent.data import encode, fetch_movielens, leave_one_out, load_ratings, split_ratings
 from recagent.tools import ToolRegistry
 
 KS = (1, 3, 5, 10)
@@ -32,6 +34,71 @@ def rating_metrics(actual: np.ndarray, predicted: np.ndarray) -> dict:
         "mae": round(float(np.mean(np.abs(errors))), 4),
         "n": len(actual),
     }
+
+
+def cv_rating_eval_from_arrays(
+    users: np.ndarray,
+    items: np.ndarray,
+    ratings: np.ndarray,
+    *,
+    kinds: Sequence[str] | None = None,
+    k: int = 5,
+    seed: int = 42,
+    factors: int = 64,
+    iterations: int = 20,
+) -> dict:
+    """5-fold CV explicit-rating prediction: RMSE/MAE mean+-std per engine.
+
+    Engines are refit from scratch on each fold's train matrix and scored on
+    the fold's held-out triples. ``als`` is rejected (no calibrated predict).
+    """
+    from recagent.engines import RATING_ENGINES, build_engine
+
+    kinds = list(kinds or RATING_ENGINES)
+    for kind in kinds:
+        if kind not in RATING_ENGINES:
+            raise ValueError(f"rating protocol supports {RATING_ENGINES}, got {kind!r}")
+    matrix, uid_to_idx, iid_to_idx, _user_ids, _item_ids = encode(users, items, ratings)
+    folds = split_ratings(users, items, ratings, k=k, seed=seed)
+    per_fold: dict[str, list[dict]] = {kind: [] for kind in kinds}
+    for (tr_u, tr_i, tr_r), (te_u, te_i, te_r) in folds:
+        tr_rows = np.fromiter((uid_to_idx[u] for u in tr_u), dtype=np.int64, count=len(tr_u))
+        tr_cols = np.fromiter((iid_to_idx[i] for i in tr_i), dtype=np.int64, count=len(tr_i))
+        train = sp.csr_matrix((tr_r, (tr_rows, tr_cols)), shape=matrix.shape)
+        te_rows = np.fromiter((uid_to_idx[u] for u in te_u), dtype=np.int64, count=len(te_u))
+        te_cols = np.fromiter((iid_to_idx[i] for i in te_i), dtype=np.int64, count=len(te_i))
+        engines = {
+            kind: build_engine(
+                kind, train, seed=seed, factors=factors, iterations=iterations
+            )
+            for kind in kinds
+        }
+        for kind, engine in engines.items():
+            predicted = np.fromiter(
+                (engine.predict(int(u), int(i)) for u, i in zip(te_rows, te_cols)),
+                dtype=float,
+                count=len(te_rows),
+            )
+            per_fold[kind].append(rating_metrics(te_r, predicted))
+    out: dict[str, dict] = {}
+    for kind, fold_metrics in per_fold.items():
+        rmse = np.asarray([m["rmse"] for m in fold_metrics])
+        mae = np.asarray([m["mae"] for m in fold_metrics])
+        out[kind] = {
+            "rmse": round(float(rmse.mean()), 4),
+            "rmse_std": round(float(rmse.std()), 4),
+            "mae": round(float(mae.mean()), 4),
+            "mae_std": round(float(mae.std()), 4),
+            "per_fold": fold_metrics,
+        }
+    return out
+
+
+def cv_rating_eval(data_dir: str | Path = "data", **kwargs) -> dict:
+    """``cv_rating_eval_from_arrays`` over the real ml-100k data."""
+    dataset_dir = fetch_movielens(data_dir)
+    users, items, ratings = load_ratings(dataset_dir)
+    return cv_rating_eval_from_arrays(users, items, ratings, **kwargs)
 
 
 def mean_metrics(

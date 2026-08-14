@@ -3,7 +3,12 @@ import pytest
 import scipy.sparse as sp
 
 from recagent.cf import build_cf
-from recagent.evaluate import cf_baseline, mean_metrics, rating_metrics
+from recagent.evaluate import (
+    cf_baseline,
+    cv_rating_eval_from_arrays,
+    mean_metrics,
+    rating_metrics,
+)
 from tests.test_tools import build_state
 
 
@@ -104,3 +109,35 @@ def test_rating_metrics_rmse_and_mae():
 
 def test_rating_metrics_empty():
     assert rating_metrics([], []) == {"rmse": 0.0, "mae": 0.0, "n": 0}
+
+
+def _low_rank_ratings(seed=0, n_users=30, n_items=40, rank=4):
+    rng = np.random.default_rng(seed)
+    u = rng.normal(0.0, 1.0, (n_users, rank))
+    v = rng.normal(0.0, 1.0, (n_items, rank))
+    scores = u @ v.T
+    scores = (scores - scores.min()) / (scores.max() - scores.min()) * 4 + 1
+    users = np.repeat(np.arange(1, n_users + 1), n_items)
+    items = np.tile(np.arange(1, n_items + 1), n_users)
+    return users, items, scores.ravel()
+
+
+def test_cv_rating_eval_runs_and_orders_engines():
+    users, items, ratings = _low_rank_ratings()
+    results = cv_rating_eval_from_arrays(
+        users, items, ratings, kinds=("mf", "user", "global-mean"), k=3, seed=1, factors=4, iterations=15
+    )
+    assert set(results) == {"mf", "user", "global-mean"}
+    for kind, metrics in results.items():
+        assert len(metrics["per_fold"]) == 3
+        assert 0 <= metrics["rmse"] <= 5
+        assert 0 <= metrics["mae"] <= 5
+    # matrix factorization recovers the low-rank signal far better than the mean
+    assert results["mf"]["rmse"] < results["global-mean"]["rmse"]
+    assert results["user"]["rmse"] < results["global-mean"]["rmse"]
+
+
+def test_cv_rating_eval_rejects_ranking_only_engines():
+    users, items, ratings = _low_rank_ratings()
+    with pytest.raises(ValueError):
+        cv_rating_eval_from_arrays(users, items, ratings, kinds=("als",))
