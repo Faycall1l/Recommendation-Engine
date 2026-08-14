@@ -118,6 +118,19 @@ def test_leave_one_out_skips_cold_users():
     assert 2 not in te_u
 
 
+def test_leave_one_out_scales_to_large_data():
+    # regression: the naive per-user scan is O(n^2) and hangs at 20M scale
+    n_users, per_user = 50_000, 12
+    users = np.repeat(np.arange(1, n_users + 1), per_user)
+    items = np.arange(n_users * per_user)  # unique ids -> no duplicate (user, item)
+    ratings = np.ones(n_users * per_user)
+    (tr_u, tr_i, _tr_r), (te_u, te_i) = leave_one_out(users, items, ratings, seed=7)
+    assert len(te_u) == n_users  # every user qualifies at 12 >= 5 interactions
+    assert len(tr_u) == n_users * per_user - n_users
+    held_pairs = set(zip(te_u, te_i))
+    assert held_pairs.isdisjoint(zip(tr_u, tr_i))
+
+
 def test_split_ratings_partitions_all_triples():
     users = np.arange(1, 11).repeat(10)
     items = np.tile(np.arange(100, 110), 10)

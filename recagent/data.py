@@ -10,6 +10,7 @@ dataset-agnostic.
 from __future__ import annotations
 
 import csv
+import itertools
 import urllib.request
 import zipfile
 from collections import Counter
@@ -196,16 +197,21 @@ def leave_one_out(
     """Hold out one interaction per user with enough history.
 
     Returns ``((train_users, train_items, train_ratings), (test_users, test_items))``.
+    Users are grouped via a stable argsort so the per-user lookup is O(n log n)
+    instead of O(n^2) — the naive scan is unusable at 20M-scale data.
     """
     rng = np.random.default_rng(seed)
-    counts = Counter(users)
-    eligible = [u for u, c in counts.items() if c >= min_interactions]
-    held_idx = set()
-    for u in eligible:
-        candidates = np.flatnonzero(users == u)
-        held_idx.add(int(rng.choice(candidates)))
-    held = np.fromiter(sorted(held_idx), dtype=np.int64)
-    mask = np.ones(len(users), dtype=bool)
+    n = len(users)
+    order = np.argsort(users, kind="stable")
+    sorted_users = users[order]
+    changes = np.flatnonzero(np.diff(sorted_users) != 0) + 1
+    boundaries = np.concatenate(([0], changes, [n]))
+    held_idx: list[int] = []
+    for start, end in itertools.pairwise(boundaries):
+        if end - start >= min_interactions:
+            held_idx.append(int(order[int(rng.integers(start, end))]))
+    held = np.asarray(held_idx, dtype=np.int64)
+    mask = np.ones(n, dtype=bool)
     mask[held] = False
     return (users[mask], items[mask], ratings[mask]), (users[held], items[held])
 
