@@ -58,3 +58,12 @@ class UserBasedCF:
         np.fill_diagonal(similarity, 0.0)
         similarity[similarity < self.min_sim] = 0.0
         return similarity
+
+    def predict(self, user_idx: int, item_idx: int) -> float:
+        """Predicted rating: user mean + similarity-weighted neighbour deviation."""
+        deviations = self.centered[:, item_idx].toarray().ravel()
+        similarity = self.similarity[user_idx]
+        denom = float(np.abs(similarity).sum())
+        if denom == 0.0:
+            return float(self.user_means[user_idx])
+        return float(self.user_means[user_idx] + (similarity @ deviations) / denom)

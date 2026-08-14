@@ -60,3 +60,18 @@ def test_userbased_similarity_identical_users():
 def test_userbased_similarity_min_sim_floor():
     cf = UserBasedCF(min_sim=0.6).fit(_matrix())
     assert (cf.similarity == 0.0).all()
+
+
+def test_userbased_predict_hand_case():
+    cf = UserBasedCF(min_sim=0.0).fit(_matrix())
+    # item 2: deviations [0, 1, 1]; sim[0]=[0, .5, 0] -> 4 + 0.5/0.5 = 5.0
+    assert cf.predict(0, 2) == pytest.approx(5.0)
+    # item 3 is unrated everywhere -> prediction collapses to the user mean
+    assert cf.predict(0, 3) == pytest.approx(4.0)
+    assert cf.predict(2, 3) == pytest.approx(3.0)
+
+
+def test_userbased_predict_falls_back_to_mean_without_neighbours():
+    matrix = sp.csr_matrix([[5.0, 0.0, 0.0], [0.0, 3.0, 0.0]])
+    cf = UserBasedCF().fit(matrix)
+    assert cf.predict(0, 1) == pytest.approx(5.0)
