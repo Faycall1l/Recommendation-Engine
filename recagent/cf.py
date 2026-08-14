@@ -133,3 +133,42 @@ class UserBasedCF:
         obj.similarity = saved["similarity"]
         obj.similarity_norm = obj._normalized_similarity()
         return obj
+
+
+class ItemBasedCF:
+    """Item-item neighbourhood collaborative filtering with adjusted cosine."""
+
+    def __init__(self, min_sim: float = 0.0):
+        self.min_sim = min_sim
+        self.matrix: sp.csr_matrix | None = None
+        self.user_means: np.ndarray | None = None
+        self.item_means: np.ndarray | None = None
+        self.centered: sp.csr_matrix | None = None
+        self.similarity: np.ndarray | None = None
+
+    def fit(self, matrix: sp.csr_matrix) -> ItemBasedCF:
+        self.matrix = matrix.tocsr()
+        counts = self.matrix.getnnz(axis=0)
+        sums = np.asarray(self.matrix.sum(axis=0)).ravel()
+        item_means = np.divide(sums, counts, out=np.zeros_like(sums), where=counts != 0)
+        centered = self.matrix.copy()
+        nonzero_rows, nonzero_cols = centered.nonzero()
+        centered[nonzero_rows, nonzero_cols] -= item_means[nonzero_cols]
+        self.item_means = item_means
+        self.centered = centered
+        user_counts = np.maximum(self.matrix.getnnz(axis=1), 1)
+        self.user_means = np.asarray(self.matrix.sum(axis=1)).ravel() / user_counts
+        self.similarity = self._similarity()
+        return self
+
+    def _similarity(self) -> np.ndarray:
+        """Adjusted cosine: L2-normalize mean-centered columns, then C^T C."""
+        squared = self.centered.multiply(self.centered)
+        norms = np.sqrt(np.asarray(squared.sum(axis=0)).ravel())
+        inv = np.zeros_like(norms)
+        np.divide(1.0, norms, out=inv, where=norms > 0)
+        normalized = self.centered @ sp.diags(inv)  # column-normalized
+        similarity = (normalized.T @ normalized).toarray()
+        np.fill_diagonal(similarity, 0.0)
+        similarity[similarity < self.min_sim] = 0.0
+        return similarity

@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from recagent.cf import CF_KINDS, UserBasedCF
+from recagent.cf import CF_KINDS, ItemBasedCF, UserBasedCF
 
 
 def _matrix() -> sp.csr_matrix:
@@ -130,3 +130,15 @@ def test_userbased_roundtrip_save_load(tmp_path):
     np.testing.assert_allclose(restored.score_all(), original.score_all())
     np.testing.assert_allclose(restored.centered.toarray(), original.centered.toarray())
     assert restored.recommend(matrix, 0, n=2) == original.recommend(matrix, 0, n=2)
+
+
+def test_itembased_fit_means_and_similarity():
+    cf = ItemBasedCF(min_sim=0.0).fit(_matrix())
+    # item means: (5+2)/2=3.5, (3+1)/2=2, (3+4)/2=3.5, unrated=0
+    np.testing.assert_allclose(cf.item_means, [3.5, 2.0, 3.5, 0.0])
+    sim = cf.similarity
+    assert sim[0, 1] == pytest.approx(0.5)
+    assert sim[0, 2] == 0.0  # -0.5 floored at min_sim=0
+    assert sim[1, 2] == pytest.approx(0.5)
+    np.testing.assert_allclose(np.diag(sim), 0.0)
+    assert sim.shape == (4, 4)
