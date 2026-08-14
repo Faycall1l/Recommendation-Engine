@@ -44,4 +44,17 @@ class UserBasedCF:
         centered[nonzero_rows, nonzero_cols] -= user_means[nonzero_rows]
         self.user_means = user_means
         self.centered = centered
+        self.similarity = self._similarity()
         return self
+
+    def _similarity(self) -> np.ndarray:
+        """Dense user-user Pearson similarity via cosine on centered ratings."""
+        squared = self.centered.multiply(self.centered)
+        norms = np.sqrt(np.asarray(squared.sum(axis=1)).ravel())
+        inv = np.zeros_like(norms)
+        np.divide(1.0, norms, out=inv, where=norms > 0)
+        normalized = sp.diags(inv) @ self.centered  # L2-normalized rows
+        similarity = (normalized @ normalized.T).toarray()
+        np.fill_diagonal(similarity, 0.0)
+        similarity[similarity < self.min_sim] = 0.0
+        return similarity

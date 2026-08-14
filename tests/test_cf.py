@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import scipy.sparse as sp
 
 from recagent.cf import CF_KINDS, UserBasedCF
@@ -30,3 +31,32 @@ def test_userbased_fit_means_and_centered():
     )
     np.testing.assert_allclose(cf.centered.toarray(), expected)
     assert cf.matrix.format == "csr"
+
+
+def test_userbased_similarity_pearson_hand_case():
+    cf = UserBasedCF(min_sim=0.0).fit(_matrix())
+    sim = cf.similarity
+    # u0'=[1,-1,0,0], u1'=[0,-1,1,0] -> dot=1, /sqrt(2)*sqrt(2) = 0.5
+    assert sim[0, 1] == pytest.approx(0.5)
+    # u0' vs u2'=[-1,0,1,0] -> dot=-1 -> -0.5, floored to 0 at min_sim=0
+    assert sim[0, 2] == 0.0
+    # u1' vs u2' -> dot=1 -> 0.5
+    assert sim[1, 2] == pytest.approx(0.5)
+    np.testing.assert_allclose(np.diag(sim), 0.0)
+
+
+def test_userbased_similarity_identical_users():
+    matrix = sp.csr_matrix(
+        [
+            [5.0, 3.0, 0.0, 0.0],
+            [0.0, 1.0, 3.0, 0.0],
+            [5.0, 3.0, 0.0, 0.0],  # identical to user 0
+        ]
+    )
+    cf = UserBasedCF().fit(matrix)
+    assert cf.similarity[0, 2] == pytest.approx(1.0)
+
+
+def test_userbased_similarity_min_sim_floor():
+    cf = UserBasedCF(min_sim=0.6).fit(_matrix())
+    assert (cf.similarity == 0.0).all()
