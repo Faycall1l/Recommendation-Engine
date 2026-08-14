@@ -3,7 +3,7 @@ import pytest
 import scipy.sparse as sp
 
 from recagent.cf import build_cf
-from recagent.evaluate import cf_baseline, mean_metrics
+from recagent.evaluate import cf_baseline, mean_metrics, rating_metrics
 from tests.test_tools import build_state
 
 
@@ -91,3 +91,16 @@ def test_cf_baseline_item_engine_rankings():
 def test_cf_baseline_rejects_unknown_kind():
     with pytest.raises(ValueError):
         cf_baseline(_user_state(), {1: 13}, kind="bogus")
+
+
+def test_rating_metrics_rmse_and_mae():
+    actual = np.array([3.0, 4.0, 5.0])
+    predicted = np.array([2.0, 4.0, 6.0])
+    m = rating_metrics(actual, predicted)
+    assert m["n"] == 3
+    assert m["rmse"] == pytest.approx(np.sqrt(2 / 3), abs=1e-4)
+    assert m["mae"] == pytest.approx(2 / 3, abs=1e-4)
+
+
+def test_rating_metrics_empty():
+    assert rating_metrics([], []) == {"rmse": 0.0, "mae": 0.0, "n": 0}

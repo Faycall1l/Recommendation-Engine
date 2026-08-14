@@ -20,6 +20,20 @@ from recagent.tools import ToolRegistry
 KS = (1, 3, 5, 10)
 
 
+def rating_metrics(actual: np.ndarray, predicted: np.ndarray) -> dict:
+    """RMSE/MAE over a batch of (actual, predicted) explicit ratings."""
+    actual = np.asarray(actual, dtype=float)
+    predicted = np.asarray(predicted, dtype=float)
+    if len(actual) == 0:
+        return {"rmse": 0.0, "mae": 0.0, "n": 0}
+    errors = actual - predicted
+    return {
+        "rmse": round(float(np.sqrt(np.mean(errors**2))), 4),
+        "mae": round(float(np.mean(np.abs(errors))), 4),
+        "n": int(len(actual)),
+    }
+
+
 def mean_metrics(
     ranked_by_user: dict[int, list[int]],
     test_items: dict[int, int],
