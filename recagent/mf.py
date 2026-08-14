@@ -2,9 +2,11 @@
 
 Minimises sum over observed ratings of ``(r_ui - u_u^T v_i)^2`` plus an L2
 penalty, alternating closed-form solves for the user and item factor matrices.
-This is the classic SOTA-class predictor for explicit-rating datasets
-(ml-100k RMSE ~0.89-0.95), implemented here with no external recommender
-library.
+This is the textbook unit-weight explicit ALS; on ml-100k it lands around
+1.00-1.05 RMSE, on par with (slightly below) memory-based CF. The published
+0.89-0.95 RMSE figures are achieved by biased/full-matrix SGD objectives
+(e.g. SVD), not by unit-weight ALS, so we report this model honestly as a
+from-scratch matrix-factorization baseline.
 """
 
 from __future__ import annotations
