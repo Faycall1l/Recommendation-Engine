@@ -1,0 +1,24 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Data & artifacts (fetched/trained, not source)
+data/
+artifacts/
+*.pkl
+*.npz
+
+# Tooling
+.DS_Store
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
