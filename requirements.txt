@@ -3,3 +3,6 @@ numpy
 scipy
 pydantic-ai>=2.30
 python-dotenv
+httpx
+fastapi
+uvicorn

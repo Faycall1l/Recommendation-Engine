@@ -22,6 +22,9 @@ dependencies = [
     "scipy",
     "pydantic-ai>=2.30",
     "python-dotenv",
+    "httpx",
+    "fastapi",
+    "uvicorn",
 ]
 
 [project.optional-dependencies]
@@ -31,7 +34,7 @@ dev = ["pytest", "ruff"]
 recagent = "recagent.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["recagent*"]
+include = ["recagent*", "recagent_sdk*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
