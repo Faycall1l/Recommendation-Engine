@@ -3,6 +3,22 @@ import pytest
 import scipy.sparse as sp
 
 from recagent.cf import CF_KINDS, ItemBasedCF, UserBasedCF, build_cf
+from recagent.state import load_state, save_state
+
+
+def _full_state(kind="user"):
+    matrix = _matrix()
+    model = build_cf(kind, matrix) if kind != "als" else None
+    return {
+        "model": model,
+        "matrix": matrix,
+        "uid_to_idx": {1: 0, 2: 1, 3: 2},
+        "iid_to_idx": {11: 0, 12: 1, 13: 2, 14: 3},
+        "user_ids": [1, 2, 3],
+        "item_ids": [11, 12, 13, 14],
+        "items_meta": {},
+        "cf_kind": kind,
+    }
 
 
 def _matrix() -> sp.csr_matrix:
@@ -197,3 +213,15 @@ def test_build_cf_factory():
         build_cf("als", _matrix())
     with pytest.raises(ValueError):
         build_cf("bogus", _matrix())
+
+
+@pytest.mark.parametrize("kind", ["user", "item"])
+def test_state_roundtrip_engine_agnostic(tmp_path, kind):
+    state = _full_state(kind)
+    save_state(state, tmp_path)
+    restored = load_state(tmp_path)
+    assert restored["cf_kind"] == kind
+    assert type(restored["model"]).__name__ == ("UserBasedCF" if kind == "user" else "ItemBasedCF")
+    np.testing.assert_allclose(restored["matrix"].toarray(), state["matrix"].toarray())
+    out = restored["model"].recommend(state["matrix"], 0, n=2)
+    assert [idx for idx, _ in out] == [3, 2]
