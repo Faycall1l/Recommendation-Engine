@@ -101,6 +101,63 @@ def cv_rating_eval(data_dir: str | Path = "data", **kwargs) -> dict:
     return cv_rating_eval_from_arrays(users, items, ratings, **kwargs)
 
 
+def loo_ranking_eval_from_arrays(
+    users: np.ndarray,
+    items: np.ndarray,
+    ratings: np.ndarray,
+    *,
+    kinds: Sequence[str] | None = None,
+    min_interactions: int = 5,
+    seed: int = 42,
+    factors: int = 64,
+    iterations: int = 20,
+    ks: tuple[int, ...] = KS,
+    user_sample: int | None = None,
+) -> dict:
+    """Leave-one-out ranking eval across any ranking engines.
+
+    One held-out interaction per user (same split as training), scored with
+    the full metric set from :func:`mean_metrics`. Returns a dict keyed by
+    engine kind.
+    """
+    from recagent.engines import RANKING_ENGINES, build_engine
+
+    kinds = list(kinds or RANKING_ENGINES)
+    for kind in kinds:
+        if kind not in RANKING_ENGINES:
+            raise ValueError(f"ranking protocol supports {RANKING_ENGINES}, got {kind!r}")
+    (tr_u, tr_i, tr_r), (te_u, te_i) = leave_one_out(
+        users, items, ratings, min_interactions=min_interactions, seed=seed
+    )
+    matrix, uid_to_idx, _iid_to_idx, _user_ids, item_ids = encode(tr_u, tr_i, tr_r)
+    engines = {
+        kind: build_engine(kind, matrix, seed=seed, factors=factors, iterations=iterations)
+        for kind in kinds
+    }
+    test_items = {int(u): int(i) for u, i in zip(te_u, te_i) if int(u) in uid_to_idx}
+    if user_sample is not None:
+        test_items = {u: test_items[u] for u in sorted(test_items)[:user_sample]}
+    ranked: dict[str, dict[int, list[int]]] = {kind: {} for kind in kinds}
+    for user_id in test_items:
+        user_idx = uid_to_idx[user_id]
+        for kind, engine in engines.items():
+            top = engine.recommend(matrix, user_idx, n=max(ks))
+            ranked[kind][user_id] = [int(item_ids[idx]) for idx, _ in top]
+    out: dict[str, dict] = {}
+    for kind in kinds:
+        metrics = mean_metrics(ranked[kind], test_items, ks)
+        metrics["kind"] = kind
+        out[kind] = metrics
+    return out
+
+
+def loo_ranking_eval(data_dir: str | Path = "data", **kwargs) -> dict:
+    """``loo_ranking_eval_from_arrays`` over the real ml-100k data."""
+    dataset_dir = fetch_movielens(data_dir)
+    users, items, ratings = load_ratings(dataset_dir)
+    return loo_ranking_eval_from_arrays(users, items, ratings, **kwargs)
+
+
 def mean_metrics(
     ranked_by_user: dict[int, list[int]],
     test_items: dict[int, int],

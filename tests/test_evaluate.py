@@ -6,6 +6,7 @@ from recagent.cf import build_cf
 from recagent.evaluate import (
     cf_baseline,
     cv_rating_eval_from_arrays,
+    loo_ranking_eval_from_arrays,
     mean_metrics,
     rating_metrics,
 )
@@ -128,7 +129,7 @@ def test_cv_rating_eval_runs_and_orders_engines():
         users, items, ratings, kinds=("mf", "user", "global-mean"), k=3, seed=1, factors=4, iterations=15
     )
     assert set(results) == {"mf", "user", "global-mean"}
-    for kind, metrics in results.items():
+    for metrics in results.values():
         assert len(metrics["per_fold"]) == 3
         assert 0 <= metrics["rmse"] <= 5
         assert 0 <= metrics["mae"] <= 5
@@ -141,3 +142,52 @@ def test_cv_rating_eval_rejects_ranking_only_engines():
     users, items, ratings = _low_rank_ratings()
     with pytest.raises(ValueError):
         cv_rating_eval_from_arrays(users, items, ratings, kinds=("als",))
+
+
+def _taste_group_ratings(seed=0):
+    """24 users in 3 taste groups; neighbours share the group's liked items."""
+    rng = np.random.default_rng(seed)
+    users, items, ratings = [], [], []
+    groups = [(0, range(0, 6), [13, 14]), (8, range(6, 12), [0, 1]), (16, range(12, 16), [2, 3])]
+    for u_start, liked, noise in groups:
+        liked = list(liked)
+        for offset in range(8):
+            u = u_start + offset + 1
+            for i in liked:
+                users.append(u)
+                items.append(i + 1)
+                ratings.append(float(rng.integers(4, 6)))
+            for i in noise:  # noise items are outside the liked set, so no dup (u,i)
+                users.append(u)
+                items.append(i + 1)
+                ratings.append(1.0)
+    return np.asarray(users), np.asarray(items), np.asarray(ratings)
+
+
+def test_loo_ranking_eval_all_engines_and_baseline_bounds():
+    users, items, ratings = _taste_group_ratings()
+    results = loo_ranking_eval_from_arrays(
+        users, items, ratings, kinds=("user", "popular", "random"), seed=1
+    )
+    assert set(results) == {"user", "popular", "random"}
+    for kind, metrics in results.items():
+        assert metrics["kind"] == kind
+        assert "mrr" in metrics
+        assert set(metrics["map"]) == set(metrics["hr"])
+    # structured taste means a real filter beats random, even against popularity
+    # (item counts are near-uniform on this toy set, so popular is ~uniform too)
+    assert results["user"]["hr"]["5"] > results["random"]["hr"]["5"]
+
+
+def test_loo_ranking_eval_user_sample():
+    users, items, ratings = _taste_group_ratings()
+    results = loo_ranking_eval_from_arrays(
+        users, items, ratings, kinds=("user",), seed=1, user_sample=8
+    )
+    assert results["user"]["n_users"] == 8
+
+
+def test_loo_ranking_eval_rejects_rating_only_engines():
+    users, items, ratings = _taste_group_ratings()
+    with pytest.raises(ValueError):
+        loo_ranking_eval_from_arrays(users, items, ratings, kinds=("global-mean",))
