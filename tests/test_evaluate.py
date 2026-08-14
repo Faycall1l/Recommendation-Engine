@@ -189,6 +189,20 @@ def test_loo_ranking_eval_user_sample():
     assert results["user"]["n_users"] == 8
 
 
+def test_loo_ranking_eval_engine_kwargs():
+    users, items, ratings = _taste_group_ratings()
+    results = loo_ranking_eval_from_arrays(
+        users,
+        items,
+        ratings,
+        kinds=("mf", "random"),
+        seed=1,
+        engine_kwargs={"mf": {"factors": 3, "iterations": 10, "regularization": 1.0}},
+    )
+    assert set(results) == {"mf", "random"}
+    assert "mrr" in results["mf"]
+
+
 def test_loo_ranking_eval_rejects_rating_only_engines():
     users, items, ratings = _taste_group_ratings()
     with pytest.raises(ValueError):

@@ -119,12 +119,14 @@ def loo_ranking_eval_from_arrays(
     iterations: int = 20,
     ks: tuple[int, ...] = KS,
     user_sample: int | None = None,
+    engine_kwargs: dict[str, dict] | None = None,
 ) -> dict:
     """Leave-one-out ranking eval across any ranking engines.
 
     One held-out interaction per user (same split as training), scored with
-    the full metric set from :func:`mean_metrics`. Returns a dict keyed by
-    engine kind.
+    the full metric set from :func:`mean_metrics`. ``engine_kwargs`` maps a
+    kind to per-engine fit kwargs (e.g. ``{"mf": {...}}``) layered over the
+    shared defaults. Returns a dict keyed by engine kind.
     """
     from recagent.engines import RANKING_ENGINES, build_engine
 
@@ -136,10 +138,12 @@ def loo_ranking_eval_from_arrays(
         users, items, ratings, min_interactions=min_interactions, seed=seed
     )
     matrix, uid_to_idx, _iid_to_idx, _user_ids, item_ids = encode(tr_u, tr_i, tr_r)
-    engines = {
-        kind: build_engine(kind, matrix, seed=seed, factors=factors, iterations=iterations)
-        for kind in kinds
-    }
+    engine_kwargs = engine_kwargs or {}
+    engines = {}
+    for kind in kinds:
+        kwargs = {"seed": seed, "factors": factors, "iterations": iterations}
+        kwargs.update(engine_kwargs.get(kind, {}))
+        engines[kind] = build_engine(kind, matrix, **kwargs)
     test_items = {int(u): int(i) for u, i in zip(te_u, te_i) if int(u) in uid_to_idx}
     if user_sample is not None:
         test_items = {u: test_items[u] for u in sorted(test_items)[:user_sample]}
