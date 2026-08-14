@@ -32,6 +32,24 @@ def _handler(request: httpx.Request) -> httpx.Response:
             200,
             json={"accepted": True, "event": {"user_id": 1, "item_id": 10, "liked": True}},
         )
+    if request.url.path == "/explain":
+        return httpx.Response(
+            200,
+            json={
+                "user_id": 1,
+                "explanation": {
+                    "item_id": 10,
+                    "title": "Alpha",
+                    "genres": ["Sci-Fi"],
+                    "basis": "genre-affinity",
+                    "matched_genres": ["Sci-Fi"],
+                    "snippet": "fits your Sci-Fi taste",
+                },
+                "text": "You love sci-fi, and Alpha is the pick.",
+                "llm": True,
+                "usage": {"requests": 1},
+            },
+        )
     if request.url.path == "/catalog/10":
         return httpx.Response(
             200,
@@ -70,6 +88,16 @@ def test_chat_and_feedback_and_catalog():
         entry = c.catalog(10)
         assert entry.avg_rating == 4.2
         assert entry.genres == ["Sci-Fi"]
+
+
+def test_explain_typed():
+    with _client() as c:
+        resp = c.explain(1, 10)
+        assert resp.llm is True
+        assert resp.text == "You love sci-fi, and Alpha is the pick."
+        assert resp.explanation.basis == "genre-affinity"
+        assert resp.explanation.matched_genres == ["Sci-Fi"]
+        assert resp.usage["requests"] == 1
 
 
 def test_error_raises():

@@ -189,7 +189,7 @@ def explain_recommendation(
         return cold
 
     _, ratings_row = row
-    user_mean = round(float(ratings_row.data.mean()), 4)
+    user_mean = round(float(ratings_row.data.mean()), 4) if ratings_row.data.size else None
     top_genres = user_top_genres(deps, user_id, _row=row)
     shared = set(genres) & set(top_genres)
     likes = _user_likes(deps, user_id, shared, k=k)
@@ -211,7 +211,7 @@ def explain_recommendation(
         genres=genres,
         score=score,
         user_mean=user_mean,
-        boost=round(score - user_mean, 4) if score is not None else None,
+        boost=round(score - user_mean, 4) if score is not None and user_mean is not None else None,
         user_top_genres=top_genres,
         matched_genres=[g for g in genres if g in shared],
         user_likes=likes,

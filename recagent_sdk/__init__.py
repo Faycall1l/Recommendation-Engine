@@ -4,6 +4,7 @@ from recagent_sdk.client import RecagentError, RecommendClient
 from recagent_sdk.models import (
     CatalogEntry,
     ChatResponse,
+    ExplainResponse,
     FeedbackResponse,
     HealthResponse,
     Recommendation,
@@ -13,6 +14,7 @@ from recagent_sdk.models import (
 __all__ = [
     "CatalogEntry",
     "ChatResponse",
+    "ExplainResponse",
     "FeedbackResponse",
     "HealthResponse",
     "RecagentError",

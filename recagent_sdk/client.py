@@ -19,6 +19,7 @@ import httpx
 from recagent_sdk.models import (
     CatalogEntry,
     ChatResponse,
+    ExplainResponse,
     FeedbackResponse,
     HealthResponse,
     RecommendResponse,
@@ -88,6 +89,12 @@ class RecommendClient:
     def catalog(self, item_id: int) -> CatalogEntry:
         return _ensure(self._http.get(f"/catalog/{item_id}"), CatalogEntry)
 
+    def explain(self, user_id: int, item_id: int) -> ExplainResponse:
+        return _ensure(
+            self._http.post("/explain", json={"user_id": user_id, "item_id": item_id}),
+            ExplainResponse,
+        )
+
     # -- async --------------------------------------------------------------
 
     async def ahealth(self) -> HealthResponse:
@@ -120,6 +127,12 @@ class RecommendClient:
     async def acatalog(self, item_id: int) -> CatalogEntry:
         resp = await self._http_async.get(f"/catalog/{item_id}")
         return _ensure(resp, CatalogEntry)
+
+    async def aexplain(self, user_id: int, item_id: int) -> ExplainResponse:
+        resp = await self._http_async.post(
+            "/explain", json={"user_id": user_id, "item_id": item_id}
+        )
+        return _ensure(resp, ExplainResponse)
 
     # -- lifecycle ----------------------------------------------------------
 

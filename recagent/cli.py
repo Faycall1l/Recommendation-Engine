@@ -269,6 +269,35 @@ def _cmd_eval(args: argparse.Namespace) -> None:
     print(f"\nreport -> {args.report}")
 
 
+def _cmd_explain(args: argparse.Namespace) -> None:
+    from recagent.config import load_llm_config
+    from recagent.explain import RecExplainer, explain_recommendation
+    from recagent.tools import ToolRegistry
+
+    deps = ToolRegistry.from_artifacts(args.artifacts)
+    explanation = explain_recommendation(deps, args.user, args.item)
+
+    config = load_llm_config()
+    if config.enabled:
+        text, usage = RecExplainer(config).explain(explanation)
+        print(text)
+        print(f"usage: {usage}")
+    else:
+        print(explanation.snippet)
+        print("(LLM disabled — deterministic snippet)")
+
+    print(
+        f"\nbasis: {explanation.basis}  "
+        f"score: {explanation.score}  "
+        f"matched genres: {explanation.matched_genres}"
+    )
+    if explanation.user_likes:
+        likes = ", ".join(
+            f"{e.title} ({e.rating})" for e in explanation.user_likes if e.rating
+        )
+        print(f"evidence: liked {likes}")
+
+
 def _cmd_serve(args: argparse.Namespace) -> None:
     import uvicorn
 
@@ -303,6 +332,13 @@ def build_parser() -> argparse.ArgumentParser:
     rec.add_argument("user", type=int, help="raw user id")
     rec.add_argument("--n", type=int, default=10)
     rec.add_argument("--artifacts", default="artifacts")
+
+    exp = sub.add_parser(
+        "explain", help="why an item was recommended to a user (evidence + prose)"
+    )
+    exp.add_argument("user", type=int, help="raw user id")
+    exp.add_argument("item", type=int, help="raw item id")
+    exp.add_argument("--artifacts", default="artifacts")
 
     chat = sub.add_parser(
         "chat", help="interactive agentic recommender (requires a vLLM endpoint)"
@@ -381,6 +417,8 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_train(args)
     elif args.command == "recommend":
         _cmd_recommend(args)
+    elif args.command == "explain":
+        _cmd_explain(args)
     elif args.command == "chat":
         _cmd_chat(args)
     elif args.command == "eval":

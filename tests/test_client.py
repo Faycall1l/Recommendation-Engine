@@ -6,6 +6,7 @@ from recagent.agent import RankedItem, RankedItems
 from recagent.cf import UserBasedCF
 from recagent.client import RecClient, _to_recommendations
 from recagent.config import LLMConfig
+from recagent.explain import RecExplainer
 from recagent.tools import ToolRegistry
 
 
@@ -131,6 +132,37 @@ def test_explain_and_health(tmp_path):
     assert info["title"] == "Alpha"
     assert client.health()["n_users"] == 1
     assert client.health()["n_items"] == 3
+
+
+class _FakeExplainer(RecExplainer):
+    def __init__(self):
+        pass
+
+    def explain(self, explanation):
+        return "grounded prose", {"requests": 1}
+
+    async def aexplain(self, explanation):
+        return "grounded prose", {"requests": 1}
+
+
+def test_explain_recommendation_degrades_to_snippet(tmp_path):
+    client = RecClient(state=make_state(), llm_config=DISABLED, feedback_path=tmp_path / "f.jsonl")
+    resp = client.explain_recommendation(1, 11)
+    assert resp.llm is False
+    assert resp.text == resp.explanation.snippet
+    assert resp.explanation.title == "Beta"
+
+
+def test_explain_recommendation_uses_llm_when_available(tmp_path):
+    client = RecClient(
+        state=make_state(),
+        explainer=_FakeExplainer(),
+        feedback_path=tmp_path / "f.jsonl",
+    )
+    resp = client.explain_recommendation(1, 11)
+    assert resp.llm is True
+    assert resp.text == "grounded prose"
+    assert resp.usage["requests"] == 1
 
 
 def test_feedback_appends_jsonl(tmp_path):

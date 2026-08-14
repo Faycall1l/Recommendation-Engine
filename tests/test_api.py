@@ -10,6 +10,15 @@ class StubClient:
     async def achat(self, message, user_id=None):
         return {"user_id": user_id, "items": [{"item_id": 10, "title": "Alpha"}], "evidence": "e", "usage": {}}
 
+    async def aexplain_recommendation(self, user_id, item_id):
+        return {
+            "user_id": user_id,
+            "explanation": {"item_id": item_id, "title": "Alpha", "genres": ["Sci-Fi"], "basis": "popularity", "snippet": "s"},
+            "text": "grounded prose",
+            "llm": True,
+            "usage": {"requests": 1},
+        }
+
     def feedback(self, user_id, item_id, liked):
         return {"accepted": True, "event": {"user_id": user_id, "item_id": item_id, "liked": liked}}
 
@@ -47,6 +56,15 @@ def test_chat():
     resp = _client().post("/chat", json={"message": "sci-fi", "user_id": 1})
     assert resp.status_code == 200
     assert resp.json()["items"][0]["title"] == "Alpha"
+
+
+def test_explain():
+    resp = _client().post("/explain", json={"user_id": 1, "item_id": 10})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["text"] == "grounded prose"
+    assert body["llm"] is True
+    assert body["explanation"]["basis"] == "popularity"
 
 
 def test_feedback():

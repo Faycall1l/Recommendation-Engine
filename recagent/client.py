@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from recagent.agent import RecAgent, build_evidence, build_plan, usage_summary
 from recagent.config import LLMConfig, load_llm_config
+from recagent.explain import Explanation, RecExplainer, explain_recommendation
 from recagent.state import load_state
 from recagent.tools import ToolRegistry
 
@@ -39,6 +40,14 @@ class ChatResponse(BaseModel):
     user_id: int | None
     items: list[Recommendation]
     evidence: str = ""
+    usage: dict[str, int] = Field(default_factory=dict)
+
+
+class ExplanationResponse(BaseModel):
+    user_id: int
+    explanation: Explanation
+    text: str
+    llm: bool
     usage: dict[str, int] = Field(default_factory=dict)
 
 
@@ -76,16 +85,19 @@ class RecClient:
         *,
         state: dict[str, Any] | None = None,
         agent: RecAgent | None = None,
+        explainer: RecExplainer | None = None,
         llm_config: LLMConfig | None = None,
         feedback_path: str | Path | None = None,
     ):
         self.state = state if state is not None else load_state(str(artifacts))
         self.deps = ToolRegistry(self.state)
-        if agent is not None:
-            self.agent = agent
-        else:
-            config = llm_config or load_llm_config()
-            self.agent = RecAgent(config, self.state) if config.enabled else None
+        config = llm_config or load_llm_config()
+        self.agent = agent if agent is not None else (RecAgent(config, self.state) if config.enabled else None)
+        self.explainer = (
+            explainer
+            if explainer is not None
+            else (RecExplainer(config) if config.enabled else None)
+        )
         self.feedback_path = (
             Path(feedback_path) if feedback_path else Path(str(artifacts)) / "feedback.jsonl"
         )
@@ -216,6 +228,35 @@ class RecClient:
             "rating_count": entry.rating_count,
             "avg_rating": entry.avg_rating,
         }
+
+    def explain_recommendation(self, user_id: int, item_id: int) -> ExplanationResponse:
+        """Why this item for this user: deterministic evidence + grounded prose.
+
+        The LLM restates the evidence when enabled; otherwise the deterministic
+        snippet stands in, so an explanation always exists.
+        """
+        explanation = explain_recommendation(self.deps, user_id, item_id)
+        if self.explainer is None:
+            return ExplanationResponse(
+                user_id=user_id, explanation=explanation, text=explanation.snippet, llm=False
+            )
+        text, usage = self.explainer.explain(explanation)
+        return ExplanationResponse(
+            user_id=user_id, explanation=explanation, text=text, llm=True, usage=usage
+        )
+
+    async def aexplain_recommendation(
+        self, user_id: int, item_id: int
+    ) -> ExplanationResponse:
+        explanation = explain_recommendation(self.deps, user_id, item_id)
+        if self.explainer is None:
+            return ExplanationResponse(
+                user_id=user_id, explanation=explanation, text=explanation.snippet, llm=False
+            )
+        text, usage = await self.explainer.aexplain(explanation)
+        return ExplanationResponse(
+            user_id=user_id, explanation=explanation, text=text, llm=True, usage=usage
+        )
 
     def feedback(self, user_id: int, item_id: int, liked: bool) -> dict[str, Any]:
         """Record an explicit like/dislike; persisted to a JSONL sidecar."""

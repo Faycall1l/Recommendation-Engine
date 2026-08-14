@@ -39,6 +39,20 @@ def test_recommend_prints_engine_kind(tmp_path, capsys):
     assert "Twin Peaks" in out
 
 
+def test_explain_prints_evidence(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("recagent.config.load_llm_config", _disabled_config)
+    main(["explain", "1", "13", "--artifacts", str(_state(tmp_path))])
+    out = capsys.readouterr().out
+    assert "basis:" in out
+    assert "LLM disabled" in out
+
+
+def _disabled_config():
+    from recagent.config import LLMConfig
+
+    return LLMConfig(enabled=False)
+
+
 def test_eval_cf_flags():
     args = build_parser().parse_args(["eval", "--cf", "item"])
     assert args.cf == "item"

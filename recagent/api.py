@@ -26,6 +26,11 @@ class ChatRequest(BaseModel):
     user_id: int | None = None
 
 
+class ExplainRequest(BaseModel):
+    user_id: int
+    item_id: int
+
+
 class FeedbackRequest(BaseModel):
     user_id: int
     item_id: int
@@ -57,6 +62,10 @@ def create_app(
     @app.post("/chat")
     async def chat(req: ChatRequest) -> Any:
         return await rec.achat(req.message, user_id=req.user_id)
+
+    @app.post("/explain")
+    async def explain(req: ExplainRequest) -> Any:
+        return await rec.aexplain_recommendation(req.user_id, req.item_id)
 
     @app.post("/feedback")
     async def feedback(req: FeedbackRequest) -> dict[str, Any]:
