@@ -13,6 +13,9 @@ files so nothing here drifts from the actual runs.
 | `results/eval_ranking_longtail.json` | debiased long-tail LOO (`exclude_head=0.02`) | 6 rankers on 773 users |
 | `results/eval_report_v2.json` | aggregate report | all of the above + verdicts |
 | `results/eval_report.json` | legacy 100-user LOO | early agent-vs-engines snapshot |
+| `results/ml20m/eval_ranking_ml20m.json` | ml-20m LOO ranking, 2000-user sample | als / popular / random |
+| `results/ml20m/eval_ranking_longtail_ml20m.json` | ml-20m debiased long-tail LOO | same engines on 785 users |
+| `results/ml20m/eval_rating_ml20m.json` | ml-20m rating CV on a 3M-rating subsample | mf + mean baselines |
 
 Reproduce everything with:
 
@@ -20,6 +23,55 @@ Reproduce everything with:
 python -m recagent.cli eval --protocol all --baselines --bootstrap --sample 200 --agent
 python -m recagent.cli eval --protocol ranking --baselines --exclude-head 0.02
 ```
+
+---
+
+## 0. MovieLens 20m migration — first results
+
+All ml-100k numbers above stay valid for that dataset. This section reports
+the first run on the 200× larger **ml-20m** (20M ratings, 138k users, 27k
+movies), where the honest scope is:
+
+- **ranking**: leave-one-out scored on a deterministic 2000-user sample (full
+  138k-user LOO is impractical); memory-based `user`/`item` engines are
+  omitted because their similarity products materialize too many nonzeros at
+  138k × 27k scale — even with the sparse top-k form. ALS dominates and is the
+  engine the serving/agent path uses anyway.
+- **rating**: 5-fold CV on a deterministic 3M-rating subsample (not the full
+  20M), `mf` + mean baselines for the same reason.
+
+### 0.1 Ranking — raw LOO (`results/ml20m/eval_ranking_ml20m.json`)
+
+| engine  | HR@10 | HR@5  | NDCG@10 | MRR    |
+|---------|-------|-------|---------|--------|
+| als     | 0.2755| 0.1930| 0.1615  | 0.1267 |
+| popular | 0.0790| 0.0500| 0.0410  | 0.0296 |
+| random  | 0.0010| 0.0010| 0.0007  | 0.0006 |
+
+ALS is 3.5× popular at HR@10 and its absolute numbers barely dip versus the
+943-user ml-100k run (HR@10 0.2853) — this is a far harder 27k-item
+candidate set, so ALS's edge holds rather than erodes at scale.
+
+### 0.2 Ranking — debiased long-tail (`results/ml20m/eval_ranking_longtail_ml20m.json`)
+
+`exclude_head=0.02` drops the 2% most-popular items; **1215 of 2000** sampled
+targets are head items, leaving **785 users**.
+
+| engine  | HR@10 | HR@5  | NDCG@10 | MRR    |
+|---------|-------|-------|---------|--------|
+| als     | 0.0420| 0.0229| 0.0187  | 0.0117 |
+| popular | 0.0000| 0.0000| 0.0000  | 0.0000 |
+| random  | 0.0000| 0.0000| 0.0000  | 0.0000 |
+
+Same story as ml-100k, starker: popularity goes to **zero** once head targets
+are excluded, and ALS's long-tail HR@10 collapses to 0.042 — the tail of a
+27k-item catalog is much harder than the tail of a 1.7k-item one. Long-tail
+recommendation at this scale is the open challenge T5 targets.
+
+### 0.3 Rating — 5-fold CV on 3M subsample (`results/ml20m/eval_rating_ml20m.json`)
+
+*Pending the background run (~16 min, per-fold progress in
+`/tmp/ml20m_rating.log`).*
 
 ---
 

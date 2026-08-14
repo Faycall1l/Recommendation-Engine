@@ -49,6 +49,7 @@ def cv_rating_eval_from_arrays(
     iterations: int = 20,
     regularization: float = 0.1,
     sample_ratings: int | None = None,
+    verbose: bool = False,
 ) -> dict:
     """5-fold CV explicit-rating prediction: RMSE/MAE mean+-std per engine.
 
@@ -56,6 +57,7 @@ def cv_rating_eval_from_arrays(
     the fold's held-out triples. ``als`` is rejected (no calibrated predict).
     ``sample_ratings`` deterministically subsamples rating triples before the
     fold split — the standard way to make CV tractable on 20M-scale data.
+    ``verbose`` prints a progress line per fold (long runs are otherwise silent).
     """
     from recagent.engines import RATING_ENGINES, build_engine
 
@@ -70,7 +72,12 @@ def cv_rating_eval_from_arrays(
     matrix, uid_to_idx, iid_to_idx, _user_ids, _item_ids = encode(users, items, ratings)
     folds = split_ratings(users, items, ratings, k=k, seed=seed)
     per_fold: dict[str, list[dict]] = {kind: [] for kind in kinds}
-    for (tr_u, tr_i, tr_r), (te_u, te_i, te_r) in folds:
+    for fold_idx, ((tr_u, tr_i, tr_r), (te_u, te_i, te_r)) in enumerate(folds):
+        if verbose:
+            print(
+                f"  fold {fold_idx + 1}/{k}: {len(tr_r):,} train, {len(te_r):,} test triples",
+                flush=True,
+            )
         tr_rows = np.fromiter((uid_to_idx[u] for u in tr_u), dtype=np.int64, count=len(tr_u))
         tr_cols = np.fromiter((iid_to_idx[i] for i in tr_i), dtype=np.int64, count=len(tr_i))
         train = sp.csr_matrix((tr_r, (tr_rows, tr_cols)), shape=matrix.shape)
