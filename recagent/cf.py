@@ -23,6 +23,18 @@ import scipy.sparse as sp
 CF_KINDS = ("als", "user", "item")
 
 
+def build_cf(kind: str, matrix: sp.csr_matrix, min_sim: float = 0.0) -> UserBasedCF | ItemBasedCF:
+    """Fit the memory-based engine for ``kind`` (``user`` or ``item``).
+
+    ``als`` is deliberately not handled here — it lives in :mod:`recagent.model`
+    and is selected via ``cf="als"`` instead.
+    """
+    kind = kind.lower()
+    if kind not in ("user", "item"):
+        raise ValueError(f"build_cf supports 'user'/'item', got {kind!r}")
+    return (UserBasedCF if kind == "user" else ItemBasedCF)(min_sim=min_sim).fit(matrix)
+
+
 class UserBasedCF:
     """User-user neighbourhood collaborative filtering with Pearson correlation."""
 

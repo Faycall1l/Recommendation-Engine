@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from recagent.cf import CF_KINDS, ItemBasedCF, UserBasedCF
+from recagent.cf import CF_KINDS, ItemBasedCF, UserBasedCF, build_cf
 
 
 def _matrix() -> sp.csr_matrix:
@@ -187,3 +187,13 @@ def test_itembased_roundtrip_save_load(tmp_path):
     assert restored.predict(0, 2) == pytest.approx(original.predict(0, 2))
     assert restored.recommend(matrix, 0, n=2) == original.recommend(matrix, 0, n=2)
     np.testing.assert_allclose(restored.score_all(), original.score_all())
+
+
+def test_build_cf_factory():
+    assert isinstance(build_cf("user", _matrix()), UserBasedCF)
+    assert isinstance(build_cf("item", _matrix()), ItemBasedCF)
+    assert isinstance(build_cf("USER", _matrix()), UserBasedCF)
+    with pytest.raises(ValueError):
+        build_cf("als", _matrix())
+    with pytest.raises(ValueError):
+        build_cf("bogus", _matrix())
