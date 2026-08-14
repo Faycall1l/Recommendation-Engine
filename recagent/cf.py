@@ -148,14 +148,15 @@ def _knn_truncate(similarity: sp.csr_matrix, topk: int) -> sp.csr_matrix:
     return sp.csr_matrix((vals, (rows, cols)), shape=similarity.shape)
 
 
-def _top_similar(similarity: np.ndarray, idx: int, n: int) -> list[tuple[int, float]]:
+def _top_similar(row: np.ndarray, idx: int, n: int) -> list[tuple[int, float]]:
+    """Top-n positive entries of a similarity row, excluding the self entry."""
     out: list[tuple[int, float]] = []
-    for candidate in np.argsort(-similarity[idx]):
+    for candidate in np.argsort(-row):
         if len(out) == n:
             break
-        if candidate == idx or similarity[idx, candidate] <= 0:
+        if candidate == idx or row[candidate] <= 0:
             continue
-        out.append((int(candidate), float(similarity[idx, candidate])))
+        out.append((int(candidate), float(row[candidate])))
     return out
 
 
@@ -213,7 +214,7 @@ class UserBasedCF:
         """Nearest neighbours of an item (adjusted-cosine, computed lazily)."""
         if self._item_sim is None:
             self._item_sim = _item_similarity(self.matrix, self.min_sim)
-        return _top_similar(self._item_sim, item_idx, n)
+        return _top_similar(self._item_sim[item_idx], item_idx, n)
 
     def predict(self, user_idx: int, item_idx: int) -> float:
         """Predicted rating: user mean + similarity-weighted neighbour deviation."""
@@ -355,7 +356,7 @@ class ItemBasedCF:
         """Nearest neighbours of a user (Pearson, computed lazily)."""
         if self._user_sim is None:
             self._user_sim = _user_similarity(self.matrix, self.min_sim)
-        return _top_similar(self._user_sim, user_idx, n)
+        return _top_similar(self._user_sim[user_idx], user_idx, n)
 
     def predict(self, user_idx: int, item_idx: int) -> float:
         """Predicted rating: similarity-weighted mean of the user's own ratings."""
