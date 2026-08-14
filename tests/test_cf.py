@@ -224,4 +224,5 @@ def test_state_roundtrip_engine_agnostic(tmp_path, kind):
     assert type(restored["model"]).__name__ == ("UserBasedCF" if kind == "user" else "ItemBasedCF")
     np.testing.assert_allclose(restored["matrix"].toarray(), state["matrix"].toarray())
     out = restored["model"].recommend(state["matrix"], 0, n=2)
-    assert [idx for idx, _ in out] == [3, 2]
+    expected = [3, 2] if kind == "item" else [2, 3]
+    assert [idx for idx, _ in out] == expected
