@@ -30,7 +30,7 @@ def rating_metrics(actual: np.ndarray, predicted: np.ndarray) -> dict:
     return {
         "rmse": round(float(np.sqrt(np.mean(errors**2))), 4),
         "mae": round(float(np.mean(np.abs(errors))), 4),
-        "n": int(len(actual)),
+        "n": len(actual),
     }
 
 
