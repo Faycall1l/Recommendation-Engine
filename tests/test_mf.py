@@ -43,3 +43,26 @@ def test_als_recommend_excludes_rated_and_sorts():
     assert all(isinstance(idx, int) and isinstance(score, float) for idx, score in out)
     assert {idx for idx, _ in out}.isdisjoint({0, 1})
     assert out[0][1] >= out[1][1]
+
+
+def test_als_is_deterministic_with_same_seed():
+    matrix = _hand_matrix()
+    a = ExplicitALS(factors=4, iterations=10, seed=5).fit(matrix)
+    b = ExplicitALS(factors=4, iterations=10, seed=5).fit(matrix)
+    np.testing.assert_allclose(a.user_factors, b.user_factors)
+    np.testing.assert_allclose(a.item_factors, b.item_factors)
+    assert a.recommend(matrix, 0, n=2) == b.recommend(matrix, 0, n=2)
+
+
+def test_als_roundtrip_save_load(tmp_path):
+    matrix = _hand_matrix()
+    original = ExplicitALS(factors=4, iterations=10, regularization=0.2, seed=6).fit(matrix)
+    path = tmp_path / "mf.npz"
+    original.save(path)
+    restored = ExplicitALS.load(path)
+    assert restored.factors == 4
+    assert restored.iterations == 10
+    assert restored.regularization == pytest.approx(0.2)
+    np.testing.assert_allclose(restored.user_factors, original.user_factors)
+    np.testing.assert_allclose(restored.item_factors, original.item_factors)
+    assert restored.recommend(matrix, 0, n=2) == original.recommend(matrix, 0, n=2)
