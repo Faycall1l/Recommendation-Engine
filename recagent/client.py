@@ -93,6 +93,8 @@ class RecClient:
     # -- low-level ----------------------------------------------------------
 
     def _cf_scores(self, user_id: int) -> dict[int, float]:
+        if user_id not in self.deps.uid_to_idx:
+            return {}
         return {e.item_id: e.score for e in self.deps.recommend(user_id, n=50).items}
 
     def _filters_request(self, user_id: int, k: int, filters: dict[str, Any] | None) -> str:
@@ -120,16 +122,28 @@ class RecClient:
         """
         request = self._filters_request(user_id, k, filters)
         if self.agent is None:
-            items = [
-                Recommendation(
-                    item_id=e.item_id,
-                    title=e.title,
-                    genres=e.genres,
-                    score=e.score,
-                    reason="collaborative filter",
-                )
-                for e in self.deps.recommend(user_id, n=k).items
-            ]
+            if user_id not in self.deps.uid_to_idx:
+                items = [
+                    Recommendation(
+                        item_id=e.item_id,
+                        title=e.title,
+                        genres=e.genres,
+                        score=e.score,
+                        reason="popularity prior (cold start)",
+                    )
+                    for e in self.deps.trending(n=k).items
+                ]
+            else:
+                items = [
+                    Recommendation(
+                        item_id=e.item_id,
+                        title=e.title,
+                        genres=e.genres,
+                        score=e.score,
+                        reason="collaborative filter",
+                    )
+                    for e in self.deps.recommend(user_id, n=k).items
+                ]
             return RecommendResponse(user_id=user_id, k=k, items=items)
         result = self.agent.run(request, self.deps)
         return RecommendResponse(

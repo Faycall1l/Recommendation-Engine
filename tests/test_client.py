@@ -64,6 +64,17 @@ def test_recommend_degrades_to_cf_without_agent(tmp_path):
     assert resp.usage == {}
 
 
+def test_recommend_cold_start_uses_popularity_prior(tmp_path):
+    client = RecClient(
+        state=make_state(),
+        llm_config=DISABLED,
+        feedback_path=tmp_path / "f.jsonl",
+    )
+    resp = client.recommend(99999, k=2)
+    assert resp.items
+    assert resp.items[0].reason == "popularity prior (cold start)"
+
+
 def test_recommend_with_fake_agent_maps_metadata(tmp_path):
     client = RecClient(state=make_state(), agent=_fake_agent(), feedback_path=tmp_path / "f.jsonl")
     resp = client.recommend(1, k=2)
@@ -85,6 +96,13 @@ def test_chat_with_fake_agent_builds_evidence(tmp_path):
     assert resp.items[0].item_id == 10
     assert "User profile" in resp.evidence
     assert "Collaborative filtering" in resp.evidence
+
+
+def test_chat_cold_start_user_builds_evidence(tmp_path):
+    client = RecClient(state=make_state(), agent=_fake_agent(), feedback_path=tmp_path / "f.jsonl")
+    resp = client.chat("sci-fi movies", user_id=99999)
+    assert "Cold-start user" in resp.evidence
+    assert "Popularity prior" in resp.evidence
 
 
 def test_explain_and_health(tmp_path):
