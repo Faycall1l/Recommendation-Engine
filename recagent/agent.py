@@ -203,7 +203,7 @@ class RecAgent:
 
 
 def usage_summary(result: Any) -> dict:
-    usage = result.usage()
+    usage = result.usage() if callable(getattr(result, "usage", None)) else result.usage
     return {
         "requests": usage.requests,
         "prompt_tokens": usage.request_tokens,
