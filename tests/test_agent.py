@@ -5,11 +5,14 @@ from recagent.agent import (
     RankedItems,
     RecAgent,
     _clean_items,
+    build_evidence,
     build_plan,
     detect_genre,
     usage_summary,
 )
 from recagent.config import LLMConfig
+from recagent.tools import ToolRegistry
+from tests.test_tools import build_state
 
 
 class _FakeDeps:
@@ -75,3 +78,26 @@ def test_usage_summary_empty():
             return FakeUsage()
 
     assert usage_summary(FakeResult()) == {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0}
+
+
+def test_evidence_warm_user():
+    deps = ToolRegistry(build_state())
+    text, meta = build_evidence({"user_id": 101, "k": 5, "genre": None}, deps)
+    assert "User profile" in text
+    assert "Collaborative filtering candidates" in text
+    assert len(meta) > 0
+
+
+def test_evidence_cold_start_user():
+    deps = ToolRegistry(build_state())
+    text, _ = build_evidence({"user_id": 99999, "k": 5, "genre": "Action"}, deps)
+    assert "Cold-start user" in text
+    assert "Popularity prior" in text
+    assert "Search matches" in text
+
+
+def test_evidence_rare_genre_widens_via_similar_items():
+    deps = ToolRegistry(build_state())
+    text, meta = build_evidence({"user_id": 101, "k": 12, "genre": "Action"}, deps)
+    assert "Widened candidates" in text
+    assert len(meta) >= 12

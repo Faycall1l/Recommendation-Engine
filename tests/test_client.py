@@ -14,6 +14,12 @@ class _StubModel:
     def recommend(self, matrix, user_idx, n=10):
         return [(0, 0.9), (1, 0.8), (2, 0.7)][:n]
 
+    def similar_items(self, item_idx, n=10):
+        return [(j, 0.5) for j in range(3) if j != item_idx][:n]
+
+    def similar_users(self, user_idx, n=10):
+        return [(j, 0.5) for j in range(1) if j != user_idx][:n]
+
 
 def make_state():
     return {

@@ -95,34 +95,58 @@ def _fmt(entry: Any, detail: str | None = None) -> str:
 
 
 def build_evidence(plan: dict[str, Any], deps: ToolRegistry) -> tuple[str, dict[int, set[str]]]:
-    """Gather evidence through the tools; return (text block, item genre map)."""
+    """Gather evidence through the tools; return (text block, item genre map).
+
+    Adaptive retrieval: warm users get profile + CF candidates; cold users fall
+    back to a popularity prior; a rare genre widens the pool through item-item
+    neighbours of the genre hits.
+    """
     meta: dict[int, set[str]] = {}
     uid, k = plan["user_id"], plan["k"]
+    genre = plan.get("genre")
 
     def absorb(items: list[Any]) -> None:
         for entry in items:
             meta[entry.item_id] = set(entry.genres)
 
     lines: list[str] = []
-    profile = deps.user_profile(uid, k=min(8, max(4, k)))
-    lines.append(f"User profile (user_id: {uid}, highest rated):")
-    for entry in profile.items:
-        lines.append(_fmt(entry, detail=f"rating {entry.rating}"))
-    absorb(profile.items)
+    if uid in deps.uid_to_idx:
+        profile = deps.user_profile(uid, k=min(8, max(4, k)))
+        lines.append(f"User profile (user_id: {uid}, highest rated):")
+        for entry in profile.items:
+            lines.append(_fmt(entry, detail=f"rating {entry.rating}"))
+        absorb(profile.items)
 
-    candidates = deps.recommend(uid, n=20)
-    lines.append("Collaborative filtering candidates (engine score, best first):")
-    for entry in candidates.items:
-        lines.append(_fmt(entry, detail=f"score {entry.score}"))
-    absorb(candidates.items)
+        candidates = deps.recommend(uid, n=20)
+        lines.append("Collaborative filtering candidates (engine score, best first):")
+        for entry in candidates.items:
+            lines.append(_fmt(entry, detail=f"score {entry.score}"))
+        absorb(candidates.items)
+    else:
+        lines.append(f"Cold-start user (user_id: {uid}) — no interaction history.")
+        prior = deps.trending(n=20)
+        lines.append("Popularity prior (most-watched across all users):")
+        for entry in prior.items:
+            lines.append(_fmt(entry, detail=f"rated {entry.rating_count}x"))
+        absorb(prior.items)
 
-    genre = plan.get("genre")
     if genre:
         hits = deps.search_items(genre, n=15)
         lines.append(f"Search matches for the requested genre ({genre}):")
         for entry in hits.items:
             lines.append(_fmt(entry))
         absorb(hits.items)
+
+        if len(hits.items) < k:
+            widened: dict[int, Any] = {}
+            for entry in hits.items:
+                for neighbour in deps.similar_items(entry.item_id, n=3).items:
+                    widened.setdefault(neighbour.item_id, neighbour)
+            if widened:
+                lines.append("Widened candidates (similar to the genre hits):")
+                for entry in list(widened.values())[:15]:
+                    lines.append(_fmt(entry, detail=f"similarity {entry.score}"))
+                absorb(list(widened.values()))
 
     return "\n".join(lines), meta
 
