@@ -278,8 +278,17 @@ class RecExplainer:
     caller falls back to ``explanation.snippet``, so explanations always exist.
     """
 
-    def __init__(self, config: LLMConfig, *, temperature: float = 0.1):
+    def __init__(
+        self,
+        config: LLMConfig,
+        *,
+        temperature: float = 0.1,
+        agent: Any | None = None,
+    ):
         self.config = config
+        if agent is not None:
+            self.agent = agent
+            return
         from pydantic_ai import Agent
         from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.providers.openai import OpenAIProvider
@@ -307,7 +316,10 @@ class RecExplainer:
             _evidence_block(explanation),
             usage_limits=UsageLimits(request_limit=4),
         )
-        text = result.output.text.strip() if result.output else explanation.snippet
+        output = result.output
+        text = output.text.strip() if output else ""
+        if not text:
+            text = explanation.snippet  # guardrail: never return an empty line
         return text, usage_summary(result)
 
     def explain(self, explanation: Explanation) -> tuple[str, dict[str, int]]:

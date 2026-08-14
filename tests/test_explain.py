@@ -3,8 +3,10 @@ import pytest
 import scipy.sparse as sp
 
 from recagent.cf import UserBasedCF
+from recagent.config import LLMConfig
 from recagent.explain import (
     _COLD_START,
+    RecExplainer,
     explain_recommendation,
     user_top_genres,
 )
@@ -97,3 +99,43 @@ def test_explain_cold_start(deps):
     assert expl.user_mean is None
     assert expl.matched_genres == []
     assert "Dune" in expl.snippet
+
+
+class _FakeResult:
+    def __init__(self, output):
+        self.output = output
+
+    def usage(self):
+        return type("U", (), {"requests": 1, "input_tokens": 10, "output_tokens": 20})()
+
+
+class _FakeAgent:
+    def __init__(self, output):
+        self._output = output
+
+    async def run(self, prompt, usage_limits=None):
+        assert "Dune" in prompt  # the evidence block drives the LLM
+        assert "Sci-Fi" in prompt
+        return _FakeResult(self._output)
+
+
+class _FakeOutput:
+    def __init__(self, text):
+        self.text = text
+
+
+def test_explainer_grounded_restatement(deps):
+    explanation = explain_recommendation(deps, 1, 101)
+    fake = _FakeAgent(_FakeOutput("You rate sci-fi favourites like Star Wars 5/5 — Dune is the same pick."))
+    explainer = RecExplainer(LLMConfig(enabled=True), agent=fake)
+    text, usage = explainer.explain(explanation)
+    assert "Dune" in text
+    assert usage["requests"] == 1
+
+
+def test_explainer_falls_back_on_empty_output(deps):
+    explanation = explain_recommendation(deps, 1, 101)
+    fake = _FakeAgent(_FakeOutput("   "))
+    explainer = RecExplainer(LLMConfig(enabled=True), agent=fake)
+    text, _ = explainer.explain(explanation)
+    assert text == explanation.snippet  # guardrail: never an empty line
