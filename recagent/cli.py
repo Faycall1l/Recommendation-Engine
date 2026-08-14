@@ -197,6 +197,15 @@ def _cmd_eval(args: argparse.Namespace) -> None:
     print(f"\nreport -> {args.report}")
 
 
+def _cmd_serve(args: argparse.Namespace) -> None:
+    import uvicorn
+
+    from recagent.api import create_app
+
+    app = create_app(args.artifacts)
+    uvicorn.run(app, host=args.host, port=args.port)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="recagent",
@@ -246,6 +255,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="constraint-eval: hold every agent item to this genre, compare genre precision vs CF",
     )
 
+    serve = sub.add_parser(
+        "serve", help="run the REST gateway (FastAPI) for the pipeline"
+    )
+    serve.add_argument("--artifacts", default="artifacts")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8000)
+
     return parser
 
 
@@ -259,6 +275,8 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_chat(args)
     elif args.command == "eval":
         _cmd_eval(args)
+    elif args.command == "serve":
+        _cmd_serve(args)
 
 
 if __name__ == "__main__":
