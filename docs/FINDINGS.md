@@ -70,8 +70,30 @@ recommendation at this scale is the open challenge T5 targets.
 
 ### 0.3 Rating — 5-fold CV on 3M subsample (`results/ml20m/eval_rating_ml20m.json`)
 
-*Pending the background run (~16 min, per-fold progress in
-`/tmp/ml20m_rating.log`).*
+`mf` uses its tuned config (`factors=6, iterations=15, reg=1.0`) via the
+restored per-engine `engine_kwargs`; the mean baselines use the shared defaults.
+
+| engine      | RMSE    | ±     | MAE     | ±     |
+|-------------|---------|-------|---------|-------|
+| item-mean   | 0.9523  | 0.0009| 0.7377  | 0.0006|
+| user-mean   | 0.9939  | 0.0011| 0.7708  | 0.0009|
+| mf (tuned)  | 1.0210  | 0.0013| 0.7592  | 0.0009|
+| global-mean | 1.0521  | 0.0007| 0.8409  | 0.0006|
+
+The mean baselines improve slightly versus ml-100k (item-mean RMSE 1.0276 →
+0.9523) — more data, denser signals. `mf` stays competitive on MAE (0.7592,
+second-best) but its RMSE (1.0210) dips below the ml-100k 0.9920: at 20M the
+subsample is sparser per user (~22 ratings/user vs ~106), so the fixed 6-factor
+config is no longer optimal. The proper fix is the T5 biased-SVD work.
+
+**Conditioning finding (unit-weight ALS).** With the *shared defaults*
+(`factors=64, iterations=20, reg=0.1`) `mf` is broken at any scale: RMSE 1.7871
+on ml-100k and 2.2284 on the ml-20m subsample — worse than the global mean.
+Unit-weight ALS needs far fewer factors and much stronger regularization once
+ratings-per-user approaches the factor count (106 → 22 here). The recorded
+ml-100k figure of 0.9920 was produced with the tuned config; the protocol now
+supports and records per-engine config so this cannot be silently mismatched
+again.
 
 ---
 

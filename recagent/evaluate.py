@@ -50,6 +50,7 @@ def cv_rating_eval_from_arrays(
     regularization: float = 0.1,
     sample_ratings: int | None = None,
     verbose: bool = False,
+    engine_kwargs: dict[str, dict] | None = None,
 ) -> dict:
     """5-fold CV explicit-rating prediction: RMSE/MAE mean+-std per engine.
 
@@ -58,6 +59,10 @@ def cv_rating_eval_from_arrays(
     ``sample_ratings`` deterministically subsamples rating triples before the
     fold split — the standard way to make CV tractable on 20M-scale data.
     ``verbose`` prints a progress line per fold (long runs are otherwise silent).
+    ``engine_kwargs`` maps a kind to per-engine fit kwargs (e.g.
+    ``{"mf": {"factors": 6, "iterations": 15, "regularization": 1.0}}``)
+    layered over the shared defaults — unit-weight ALS needs far stronger
+    regularization and fewer factors than the implicit engines.
     """
     from recagent.engines import RATING_ENGINES, build_engine
 
@@ -65,6 +70,7 @@ def cv_rating_eval_from_arrays(
     for kind in kinds:
         if kind not in RATING_ENGINES:
             raise ValueError(f"rating protocol supports {RATING_ENGINES}, got {kind!r}")
+    engine_kwargs = engine_kwargs or {}
     if sample_ratings is not None:
         rng = np.random.default_rng(seed)
         take = rng.choice(len(ratings), size=sample_ratings, replace=False)
@@ -83,17 +89,12 @@ def cv_rating_eval_from_arrays(
         train = sp.csr_matrix((tr_r, (tr_rows, tr_cols)), shape=matrix.shape)
         te_rows = np.fromiter((uid_to_idx[u] for u in te_u), dtype=np.int64, count=len(te_u))
         te_cols = np.fromiter((iid_to_idx[i] for i in te_i), dtype=np.int64, count=len(te_i))
-        engines = {
-            kind: build_engine(
-                kind,
-                train,
-                seed=seed,
-                factors=factors,
-                iterations=iterations,
-                regularization=regularization,
-            )
-            for kind in kinds
-        }
+        engines = {}
+        for kind in kinds:
+            kwargs = {"seed": seed, "factors": factors, "iterations": iterations,
+                      "regularization": regularization}
+            kwargs.update(engine_kwargs.get(kind, {}))
+            engines[kind] = build_engine(kind, train, **kwargs)
         for kind, engine in engines.items():
             predicted = np.fromiter(
                 (engine.predict(int(u), int(i)) for u, i in zip(te_rows, te_cols)),
@@ -105,11 +106,14 @@ def cv_rating_eval_from_arrays(
     for kind, fold_metrics in per_fold.items():
         rmse = np.asarray([m["rmse"] for m in fold_metrics])
         mae = np.asarray([m["mae"] for m in fold_metrics])
+        config = {"factors": factors, "iterations": iterations, "regularization": regularization}
+        config.update(engine_kwargs.get(kind, {}))
         out[kind] = {
             "rmse": round(float(rmse.mean()), 4),
             "rmse_std": round(float(rmse.std()), 4),
             "mae": round(float(mae.mean()), 4),
             "mae_std": round(float(mae.std()), 4),
+            "config": config,
             "per_fold": fold_metrics,
         }
     return out

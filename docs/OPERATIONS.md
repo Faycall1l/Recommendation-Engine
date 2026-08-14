@@ -19,12 +19,17 @@ use the LLM agent.
 python -m recagent.cli train --cf user          # default: user-based -> artifacts/
 python -m recagent.cli train --cf als           # -> artifacts_als/
 python -m recagent.cli train --cf item          # -> artifacts_item/
+python -m recagent.cli train --cf als --data-kind ml-20m   # big dataset (default ml-100k)
 ```
 
 (`mf` is a from-scratch explicit ALS built at eval time via
 `recagent.engines.build_engine("mf")`, not a `train` target.) Artefacts are
 gitignored and regenerable; a saved artefact embeds the engine kind and its
 fitted weights.
+
+`--data-kind {ml-100k, ml-20m}` switches the dataset family everywhere
+(`train`, `eval`). ml-20m is 20M ratings / 138k users / 27k movies — the
+default ml-100k stays the fast, test-safe default.
 
 ## Recommend / explain
 
@@ -45,10 +50,18 @@ python -m recagent.cli eval --protocol ranking --baselines --exclude-head 0.02
 
 # rating CV only
 python -m recagent.cli eval --protocol rating --baselines
+
+# ml-20m: same protocols, plus a deterministic rating subsample for the CV
+# (full 5-fold over 20M triples is impractical)
+python -m recagent.cli eval --protocol all --data-kind ml-20m --sample-ratings 3000000 \
+  --rating-report results/ml20m/eval_rating_ml20m.json
 ```
 
 All protocols seed their splits (default 42). Reports land in `results/` and
-feed `docs/FINDINGS.md`.
+feed `docs/FINDINGS.md`. On ml-20m the LOO protocols should be run with a user
+sample (`--sample`) and the rating CV with `--sample-ratings`; the raw
+full-scale scripts for the numbers in `docs/FINDINGS.md` §0 are
+`scripts/run_ml20m_loo.py` and `scripts/run_ml20m_rating.py`.
 
 ## Serve
 

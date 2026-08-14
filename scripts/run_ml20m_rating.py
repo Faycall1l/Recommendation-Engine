@@ -24,6 +24,9 @@ KINDS = ("mf", "global-mean", "user-mean", "item-mean")
 SAMPLE_RATINGS = 3_000_000
 FOLDS = 5
 SEED = 42
+# unit-weight ExplicitALS needs strong regularization + few factors (see FINDINGS
+# provenance: the ml-100k mf 0.9920 figure used factors=6/iterations=15/reg=1.0)
+ENGINE_KWARGS = {"mf": {"factors": 6, "iterations": 15, "regularization": 1.0}}
 
 
 def main() -> None:
@@ -40,13 +43,14 @@ def main() -> None:
         k=FOLDS,
         seed=SEED,
         sample_ratings=SAMPLE_RATINGS,
+        engine_kwargs=ENGINE_KWARGS,
         verbose=True,
     )
     print(f"cv {time.time() - t0:.1f}s", flush=True)
     for kind, m in results.items():
         print(
             f"  {kind:<12} RMSE {m['rmse']:.4f} ± {m['rmse_std']:.4f}   "
-            f"MAE {m['mae']:.4f} ± {m['mae_std']:.4f}",
+            f"MAE {m['mae']:.4f} ± {m['mae_std']:.4f}   config={m.get('config')}",
             flush=True,
         )
 
@@ -57,6 +61,7 @@ def main() -> None:
         "folds": FOLDS,
         "seed": SEED,
         "sample_ratings": SAMPLE_RATINGS,
+        "engine_kwargs": ENGINE_KWARGS,
         "engines": results,
     }
     (RESULTS / "eval_rating_ml20m.json").write_text(json.dumps(report, indent=2))

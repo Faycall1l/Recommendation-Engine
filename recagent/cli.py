@@ -138,6 +138,8 @@ def _run_rating_protocol(args: argparse.Namespace) -> str:
         k=args.folds,
         seed=args.seed,
         sample_ratings=args.sample_ratings,
+        # unit-weight ALS diverges at the shared defaults (see FINDINGS §0.3)
+        engine_kwargs={"mf": {"factors": 6, "iterations": 15, "regularization": 1.0}},
     )
     print(f"\n5-fold CV explicit-rating prediction (k={args.folds})")
     for kind, m in results.items():

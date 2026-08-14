@@ -148,6 +148,21 @@ def test_cv_rating_eval_rejects_ranking_only_engines():
         cv_rating_eval_from_arrays(users, items, ratings, kinds=("als",))
 
 
+def test_cv_rating_eval_engine_kwargs_per_engine_config():
+    users, items, ratings = _low_rank_ratings()
+    results = cv_rating_eval_from_arrays(
+        users,
+        items,
+        ratings,
+        kinds=("mf",),
+        k=3,
+        seed=1,
+        engine_kwargs={"mf": {"factors": 3, "iterations": 10, "regularization": 0.5}},
+    )
+    # per-engine config is respected AND recorded for provenance
+    assert results["mf"]["config"] == {"factors": 3, "iterations": 10, "regularization": 0.5}
+
+
 def _taste_group_ratings(seed=0):
     """24 users in 3 taste groups; neighbours share the group's liked items."""
     rng = np.random.default_rng(seed)

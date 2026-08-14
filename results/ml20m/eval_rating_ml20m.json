@@ -1,0 +1,168 @@
+{
+  "dataset": "ml-20m",
+  "protocol": "rating",
+  "folds": 5,
+  "seed": 42,
+  "sample_ratings": 3000000,
+  "engine_kwargs": {
+    "mf": {
+      "factors": 6,
+      "iterations": 15,
+      "regularization": 1.0
+    }
+  },
+  "engines": {
+    "mf": {
+      "rmse": 1.021,
+      "rmse_std": 0.0013,
+      "mae": 0.7592,
+      "mae_std": 0.0009,
+      "config": {
+        "factors": 6,
+        "iterations": 15,
+        "regularization": 1.0
+      },
+      "per_fold": [
+        {
+          "rmse": 1.023,
+          "mae": 0.7601,
+          "n": 598697
+        },
+        {
+          "rmse": 1.0212,
+          "mae": 0.759,
+          "n": 598633
+        },
+        {
+          "rmse": 1.0214,
+          "mae": 0.7603,
+          "n": 598614
+        },
+        {
+          "rmse": 1.0204,
+          "mae": 0.7589,
+          "n": 598650
+        },
+        {
+          "rmse": 1.019,
+          "mae": 0.7577,
+          "n": 598646
+        }
+      ]
+    },
+    "global-mean": {
+      "rmse": 1.0521,
+      "rmse_std": 0.0007,
+      "mae": 0.8409,
+      "mae_std": 0.0006,
+      "config": {
+        "factors": 64,
+        "iterations": 20,
+        "regularization": 0.1
+      },
+      "per_fold": [
+        {
+          "rmse": 1.0525,
+          "mae": 0.8411,
+          "n": 598697
+        },
+        {
+          "rmse": 1.0522,
+          "mae": 0.8407,
+          "n": 598633
+        },
+        {
+          "rmse": 1.0515,
+          "mae": 0.8402,
+          "n": 598614
+        },
+        {
+          "rmse": 1.0532,
+          "mae": 0.842,
+          "n": 598650
+        },
+        {
+          "rmse": 1.0512,
+          "mae": 0.8404,
+          "n": 598646
+        }
+      ]
+    },
+    "user-mean": {
+      "rmse": 0.9939,
+      "rmse_std": 0.0011,
+      "mae": 0.7708,
+      "mae_std": 0.0009,
+      "config": {
+        "factors": 64,
+        "iterations": 20,
+        "regularization": 0.1
+      },
+      "per_fold": [
+        {
+          "rmse": 0.9948,
+          "mae": 0.771,
+          "n": 598697
+        },
+        {
+          "rmse": 0.9943,
+          "mae": 0.7712,
+          "n": 598633
+        },
+        {
+          "rmse": 0.9931,
+          "mae": 0.7697,
+          "n": 598614
+        },
+        {
+          "rmse": 0.9951,
+          "mae": 0.7722,
+          "n": 598650
+        },
+        {
+          "rmse": 0.9923,
+          "mae": 0.7698,
+          "n": 598646
+        }
+      ]
+    },
+    "item-mean": {
+      "rmse": 0.9523,
+      "rmse_std": 0.0009,
+      "mae": 0.7377,
+      "mae_std": 0.0006,
+      "config": {
+        "factors": 64,
+        "iterations": 20,
+        "regularization": 0.1
+      },
+      "per_fold": [
+        {
+          "rmse": 0.9516,
+          "mae": 0.7368,
+          "n": 598697
+        },
+        {
+          "rmse": 0.9536,
+          "mae": 0.7384,
+          "n": 598633
+        },
+        {
+          "rmse": 0.9527,
+          "mae": 0.7377,
+          "n": 598614
+        },
+        {
+          "rmse": 0.9526,
+          "mae": 0.7382,
+          "n": 598650
+        },
+        {
+          "rmse": 0.9512,
+          "mae": 0.7372,
+          "n": 598646
+        }
+      ]
+    }
+  }
+}
