@@ -1,0 +1,86 @@
+# Operations / runbook
+
+Commands for the day-to-day lifecycle. Design decisions in
+[DESIGN.md](DESIGN.md), results in [FINDINGS.md](FINDINGS.md).
+
+## Install
+
+```bash
+python -m pip install -e .        # package + recagent + recagent_sdk
+cp .env.example .env              # optional LLM credentials (ATHAR_AGENT__*)
+```
+
+Without `.env`, `RecClient` runs pure CF; with it, `recommend`/`chat`/`explain`
+use the LLM agent.
+
+## Train
+
+```bash
+python -m recagent.cli train --cf user          # default: user-based -> artifacts/
+python -m recagent.cli train --cf als           # -> artifacts_als/
+python -m recagent.cli train --cf item          # -> artifacts_item/
+```
+
+(`mf` is a from-scratch explicit ALS built at eval time via
+`recagent.engines.build_engine("mf")`, not a `train` target.) Artefacts are
+gitignored and regenerable; a saved artefact embeds the engine kind and its
+fitted weights.
+
+## Recommend / explain
+
+```bash
+python -m recagent.cli recommend 196             # engine + top-10
+python -m recagent.cli recommend 196 --k 5 --genre "Sci-Fi"   # constrained
+python -m recagent.cli explain 196 64            # why this item for this user
+```
+
+## Evaluate
+
+```bash
+# everything: rating CV + LOO ranking + baselines + bootstrap + 200-user agent
+python -m recagent.cli eval --protocol all --baselines --bootstrap --sample 200 --agent
+
+# just ranking, with the long-tail debias (top-2% head targets dropped)
+python -m recagent.cli eval --protocol ranking --baselines --exclude-head 0.02
+
+# rating CV only
+python -m recagent.cli eval --protocol rating --baselines
+```
+
+All protocols seed their splits (default 42). Reports land in `results/` and
+feed `docs/FINDINGS.md`.
+
+## Serve
+
+```bash
+python -m recagent.cli serve --artifacts artifacts --port 8000
+# interactive API docs at http://localhost:8000/docs
+```
+
+## SDK
+
+```python
+from recagent_sdk import RecommendClient
+
+with RecommendClient("http://127.0.0.1:8000") as client:
+    recs = client.recommend(user_id=196, k=5, filters={"genre": "Sci-Fi"})
+    why  = client.explain(user_id=196, item_id=64)
+```
+
+## Files that matter
+
+| path | purpose |
+|---|---|
+| `recagent/` | package: engines, agent, explain, client, api, cli, evaluate, data, config, model |
+| `recagent_sdk/` | typed REST client (sync + async) |
+| `results/*.json` | machine-readable eval output (single source of truth) |
+| `docs/` | FINDINGS (numbers), DESIGN (why), TESTING (coverage), this runbook |
+| `assets/recagent-logo.svg` | mascot logo |
+| `data/`, `artifacts*/`, `.env` | gitignored; fetched/trained, never committed |
+
+## House rules
+
+- Every merged change keeps `pytest tests/ -q` and `ruff check .` green.
+- Evaluation numbers are transcribed from `results/*.json`, never retyped.
+- When an experiment disappoints, the disappointment gets written down
+  (see the agent-vs-ALS result in `docs/FINDINGS.md` §4).

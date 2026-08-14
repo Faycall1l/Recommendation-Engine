@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-label="RecAgent — a friendly recommendation robot">
+  <title>RecAgent</title>
+  <desc>A cute flat robot mascot for RecAgent, a recommendation engine that explains itself.</desc>
+
+  <defs>
+    <linearGradient id="head" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7c7cf0"/>
+      <stop offset="1" stop-color="#5454c9"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ground shadow -->
+  <ellipse cx="160" cy="278" rx="78" ry="14" fill="#2b2b52" opacity="0.10"/>
+
+  <!-- side ears -->
+  <circle cx="82" cy="152" r="12" fill="#a9a9f5"/>
+  <circle cx="238" cy="152" r="12" fill="#a9a9f5"/>
+
+  <!-- antenna -->
+  <rect x="154" y="46" width="12" height="46" rx="6" fill="#a9a9f5"/>
+  <path d="M160 22 L167 38 L183 44 L167 50 L160 66 L153 50 L137 44 L153 38 Z" fill="#ffc24b"/>
+
+  <!-- head -->
+  <rect x="88" y="92" width="144" height="132" rx="44" fill="url(#head)"/>
+  <ellipse cx="160" cy="108" rx="30" ry="12" fill="#ffffff" opacity="0.18"/>
+
+  <!-- eyes -->
+  <circle cx="124" cy="150" r="14" fill="#2b2b52"/>
+  <circle cx="196" cy="150" r="14" fill="#2b2b52"/>
+  <circle cx="120" cy="146" r="5" fill="#ffffff"/>
+  <circle cx="192" cy="146" r="5" fill="#ffffff"/>
+  <circle cx="126" cy="153" r="2.5" fill="#ffffff" opacity="0.7"/>
+  <circle cx="198" cy="153" r="2.5" fill="#ffffff" opacity="0.7"/>
+
+  <!-- blush -->
+  <ellipse cx="100" cy="180" rx="12" ry="7" fill="#ffa7c4"/>
+  <ellipse cx="220" cy="180" rx="12" ry="7" fill="#ffa7c4"/>
+
+  <!-- smile -->
+  <path d="M148 178 Q160 192 172 178" stroke="#2b2b52" stroke-width="6" stroke-linecap="round" fill="none"/>
+
+  <!-- recommendation sparkle -->
+  <path d="M244 66 L251 80 L265 86 L251 92 L244 106 L237 92 L223 86 L237 80 Z" fill="#ffc24b"/>
+  <path d="M70 72 L75 85 L88 90 L75 95 L70 108 L65 95 L52 90 L65 85 Z" fill="#ffc24b"/>
+</svg>

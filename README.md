@@ -1,6 +1,12 @@
-# Recommendation-Engine
+<p align="center">
+  <img src="assets/recagent-logo.svg" alt="RecAgent mascot" width="180"/>
+</p>
 
-Collaborative filtering candidates, refined by an agentic LLM (Gemma-4 on vLLM).
+# RecAgent — Recommendation-Engine
+
+Collaborative filtering candidates, refined by an agentic LLM (Gemma-4 on vLLM) — every recommendation with a verifiable "why".
+
+> **Docs:** [Findings & evaluation results](docs/FINDINGS.md) · [Design notes](docs/DESIGN.md) · [Testing](docs/TESTING.md) · [Operations/runbook](docs/OPERATIONS.md)
 
 ## Engines
 
