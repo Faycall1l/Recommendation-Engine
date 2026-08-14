@@ -215,6 +215,13 @@ def test_build_cf_factory():
         build_cf("bogus", _matrix())
 
 
+def test_train_from_data_rejects_invalid_cf():
+    from recagent.model import train_from_data
+
+    with pytest.raises(ValueError, match="cf must be one of"):
+        train_from_data(cf="bogus")
+
+
 @pytest.mark.parametrize("kind", ["user", "item"])
 def test_state_roundtrip_engine_agnostic(tmp_path, kind):
     state = _full_state(kind)

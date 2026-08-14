@@ -16,6 +16,7 @@ def _cmd_train(args: argparse.Namespace) -> None:
             seed=args.seed,
             factors=args.factors,
             iterations=args.iterations,
+            cf=args.cf,
         )
     )
     save_state(
@@ -27,11 +28,12 @@ def _cmd_train(args: argparse.Namespace) -> None:
             "user_ids": user_ids,
             "item_ids": item_ids,
             "items_meta": items_meta,
+            "cf_kind": args.cf,
         },
         args.artifacts,
     )
     n_users, n_items = matrix.shape
-    print(f"trained ALS on {n_users} users x {n_items} items")
+    print(f"trained {args.cf} CF on {n_users} users x {n_items} items")
     print(f"saved artefacts -> {args.artifacts}")
 
 
@@ -213,13 +215,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    train = sub.add_parser("train", help="fetch data and fit the ALS model")
+    train = sub.add_parser("train", help="fetch data and fit a CF engine")
     train.add_argument("--data", default="data", help="data directory (default: data)")
     train.add_argument("--artifacts", default="artifacts", help="output directory")
     train.add_argument("--factors", type=int, default=64)
     train.add_argument("--iterations", type=int, default=20)
     train.add_argument("--min-interactions", type=int, default=5)
     train.add_argument("--seed", type=int, default=42)
+    train.add_argument(
+        "--cf",
+        default="user",
+        choices=("als", "user", "item"),
+        help="collaborative filtering engine (default: user)",
+    )
 
     rec = sub.add_parser("recommend", help="top-n recommendations for a user (CF only)")
     rec.add_argument("user", type=int, help="raw user id")

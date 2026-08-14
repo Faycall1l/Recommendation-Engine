@@ -71,11 +71,19 @@ def train_from_data(
     seed: int = 42,
     factors: int = 64,
     iterations: int = 20,
+    cf: str = "user",
 ) -> tuple[Recommender, sp.csr_matrix, dict, dict, dict, dict, np.ndarray, np.ndarray]:
-    """End-to-end: fetch, split leave-one-out, encode, fit ALS.
+    """End-to-end: fetch, split leave-one-out, encode, fit a CF engine.
+
+    ``cf`` selects the engine: ``als`` (implicit ALS wrapper) or the
+    memory-based ``user``/``item`` neighbourhood methods (default ``user``).
 
     Returns the fitted model plus the artefacts needed for inference and eval.
     """
+    from recagent.cf import CF_KINDS, build_cf
+
+    if cf not in CF_KINDS:
+        raise ValueError(f"cf must be one of {CF_KINDS}, got {cf!r}")
     dataset_dir = fetch_movielens(data_dir)
     users, items, ratings = load_ratings(dataset_dir)
     items_meta = load_items(dataset_dir)
@@ -83,7 +91,10 @@ def train_from_data(
         users, items, ratings, min_interactions=min_interactions, seed=seed
     )
     matrix, uid_to_idx, iid_to_idx, user_ids, item_ids = encode(tr_u, tr_i, tr_r)
-    recommender = Recommender(factors=factors, iterations=iterations).fit(matrix)
+    if cf == "als":
+        recommender: Recommender = Recommender(factors=factors, iterations=iterations).fit(matrix)
+    else:
+        recommender = build_cf(cf, matrix)
     return (
         recommender,
         matrix,
