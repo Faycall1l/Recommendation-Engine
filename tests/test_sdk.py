@@ -83,11 +83,8 @@ def test_error_raises():
 
 def test_async_client():
     async def run():
-        client = _client()
-        try:
+        async with _client() as client:
             resp = await client.arecommend(1, k=2)
             return resp.items[0].score
-        finally:
-            client.close()
 
     assert asyncio.run(run()) == 0.9

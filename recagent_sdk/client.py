@@ -125,10 +125,18 @@ class RecommendClient:
 
     def close(self) -> None:
         self._http.close()
-        self._http_async.aclose()
+
+    async def aclose(self) -> None:
+        await self._http_async.aclose()
 
     def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *exc: object) -> None:
         self.close()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.aclose()
