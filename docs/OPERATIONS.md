@@ -65,8 +65,10 @@ full-scale scripts for the numbers in `docs/FINDINGS.md` §0 are
 `scripts/run_ml20m_t5.py` (classic-model experiments, §0.4),
 `scripts/run_t5_probes.py` (svd rating + implicit-alpha probes), and
 `scripts/run_ml20m_agent.py` (agent eval on the ml-20m sample — needs a live
-vLLM endpoint; the ml-20m-trained `artifacts_ml20m/` and the ml-100k
-equivalent `scripts/run_agent200.py` are both runnable now, see §0.5/§4).
+vLLM endpoint; `--sample/--seed/--out` control the cohort, default is a
+uniform seed-42 200-user sample; the ml-20m-trained `artifacts_ml20m/` and the
+ml-100k equivalent `scripts/run_agent200.py` are both runnable now, see
+§0.5/§0.6/§4).
 
 ## Serve
 

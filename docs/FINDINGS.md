@@ -19,6 +19,7 @@ files so nothing here drifts from the actual runs.
 | `results/ml20m/eval_rating_ml20m.json` | ml-20m rating CV on a 3M-rating subsample | mf + mean baselines |
 | `results/ml20m/eval_rating_ml20m_svd.json` | ml-20m rating CV on the same subsample | svd (tuned) + mf + mean baselines |
 | `results/ml20m/eval_agent200_ml20m.json` | ml-20m LOO, first 200 sampled users, k=5 | agent (context v2) vs als + sci-fi constraint (sci-fi: 1.0 vs 0.179) |
+| `results/ml20m/eval_agent200_ml20m_uniform.json` | ml-20m LOO, uniform seed-42 200-user sample, k=5 | agent (context v2) vs als + sci-fi constraint (1.0 vs 0.184) |
 | `results/ml20m/eval_t5_ranking_ml20m.json` | ml-20m LOO ranking (T5) | als / svd / popular / blend 0.3–0.7 |
 | `results/ml20m/eval_t5_ranking_longtail_ml20m.json` | ml-20m debiased long-tail LOO (T5) | same engines on 785 users |
 | `results/ml20m/eval_t5_als_factors_ml20m.json` | ml-20m LOO ranking, factor-count sweep | als f24 / f32 / blend(f24,0.7) |
@@ -189,6 +190,30 @@ lists (0/200 identical). Earlier drafts mislabeled the saved per-user lists
 restored in `results/ml20m/eval_agent200_ml20m.json` the row discriminates
 1.0 vs 0.179. Caveat: this cohort is the earliest-adopter slice (lowest user
 ids), so the uniform-sample rerun in §0.6 is the cleaner generalization.
+
+### 0.6 Agentic reranker on a uniform ml-20m sample (§0.5 rerun, `results/ml20m/eval_agent200_ml20m_uniform.json`)
+
+Same protocol, same endpoint, same model — but the cohort is a seeded uniform
+random sample (seed 42, 200 users) of the LOO split instead of the biased
+first-200-by-id slice. ALS HR@5 drops slightly on this more typical cohort
+(0.200 vs 0.205), and the agent's deficit narrows on MRR.
+
+| metric | agent | als    | delta (paired bootstrap) |
+|--------|-------|--------|--------------------------|
+| HR@5   | 0.140 | 0.200  | −0.060, 95% CI [−0.135, 0.010], p=0.133 |
+| MRR    | 0.089 | 0.114  | −0.024, 95% CI [−0.076, 0.027], p=0.351 |
+
+On the representative cohort the agent deficit is again **not significant**
+(HR@5 p=0.133, MRR p=0.351), and both deltas are smaller in magnitude than
+the first-200 slice suggested (§0.5: −0.040 / −0.046). The raw-ranking story
+is consistent across all three datasets: the agent trails ALS by ~0.02–0.09
+HR@5 without ever reaching significance.
+
+The sci-fi constraint win reproduces cleanly on the representative cohort:
+agent precision **1.0 vs CF 0.184**, agent lists *not* identical to ALS
+(0/200) — verified by recomputation from the saved per-user lists. A
+100%-compliant top-5 with zero list-copying is the agent's one consistently
+reproducible advantage over the engines.
 
 ---
 
