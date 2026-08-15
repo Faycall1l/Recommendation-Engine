@@ -205,6 +205,39 @@ def test_itembased_roundtrip_save_load(tmp_path):
     np.testing.assert_allclose(restored.score_all(), original.score_all())
 
 
+def test_legacy_dense_similarity_load(tmp_path):
+    matrix = _matrix()
+    for cls in (UserBasedCF, ItemBasedCF):
+        model = cls(min_sim=0.1).fit(matrix)
+        # write the legacy format: dense similarity, no sim_sparse keys
+        coo = model.matrix.tocoo()
+        payload: dict = {
+            "min_sim": model.min_sim,
+            "m_data": coo.data,
+            "m_row": coo.row,
+            "m_col": coo.col,
+            "m_shape": np.asarray(coo.shape),
+            "similarity": np.asarray(model.similarity),
+        }
+        if cls is UserBasedCF:
+            payload["user_means"] = model.user_means
+            payload.update(
+                c_data=model.centered.tocoo().data,
+                c_row=model.centered.tocoo().row,
+                c_col=model.centered.tocoo().col,
+                c_shape=np.asarray(model.centered.shape),
+            )
+        else:
+            payload["user_means"] = model.user_means
+            payload["item_means"] = model.item_means
+        path = tmp_path / f"legacy_{cls.__name__}.npz"
+        np.savez(path, **payload)
+
+        restored = cls.load(path)
+        np.testing.assert_allclose(restored.similarity, model.similarity)
+        assert restored.recommend(matrix, 0, n=2) == model.recommend(matrix, 0, n=2)
+
+
 def test_build_cf_factory():
     assert isinstance(build_cf("user", _matrix()), UserBasedCF)
     assert isinstance(build_cf("item", _matrix()), ItemBasedCF)

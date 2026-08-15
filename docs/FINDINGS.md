@@ -18,7 +18,7 @@ files so nothing here drifts from the actual runs.
 | `results/ml20m/eval_ranking_longtail_ml20m.json` | ml-20m debiased long-tail LOO | same engines on 785 users |
 | `results/ml20m/eval_rating_ml20m.json` | ml-20m rating CV on a 3M-rating subsample | mf + mean baselines |
 | `results/ml20m/eval_rating_ml20m_svd.json` | ml-20m rating CV on the same subsample | svd (tuned) + mf + mean baselines |
-| `results/ml20m/eval_agent200_ml20m.json` | ml-20m LOO, first 200 sampled users, k=5 | agent (context v2) vs als + sci-fi constraint |
+| `results/ml20m/eval_agent200_ml20m.json` | ml-20m LOO, first 200 sampled users, k=5 | agent (context v2) vs als + sci-fi constraint (sci-fi: 1.0 vs 0.179) |
 | `results/ml20m/eval_t5_ranking_ml20m.json` | ml-20m LOO ranking (T5) | als / svd / popular / blend 0.3–0.7 |
 | `results/ml20m/eval_t5_ranking_longtail_ml20m.json` | ml-20m debiased long-tail LOO (T5) | same engines on 785 users |
 | `results/ml20m/eval_t5_als_factors_ml20m.json` | ml-20m LOO ranking, factor-count sweep | als f24 / f32 / blend(f24,0.7) |
@@ -179,12 +179,16 @@ significant** on this sample (p=0.33 HR@5, p=0.12 MRR) and the gap is a third
 of the ml-100k size (−0.040 vs −0.095 HR@5). The richer context closed most of
 the gap even though it did not close it.
 
-The sci-fi constraint row on this sample is **degenerate**: the first 200 LOO
-users sorted by id are heavy sci-fi fans, and the agent's lists are
-byte-identical to the ALS lists (`agent == cf` for all 200 users; CF top-5 is
-100% sci-fi across 89 distinct items — Star Wars, Twelve Monkeys, The Matrix,
-...). Both precisions are 1.0, so the constraint test discriminates nothing
-here. Reported as a limitation, not a win.
+The sci-fi constraint row on this sample is a **clean compliance win**, not a
+degenerate one: the agent returned 100% sci-fi lists (precision 1.0, verified
+from the saved per-user lists) while the ALS model's top-5 for the same users
+is only **0.179** sci-fi — and the agent's lists are *not* copies of the ALS
+lists (0/200 identical). Earlier drafts mislabeled the saved per-user lists
+(the `cf` field held the agent's own responses), which produced a false
+`agent == cf`, "both 1.0, degenerate" conclusion; with the real ALS lists
+restored in `results/ml20m/eval_agent200_ml20m.json` the row discriminates
+1.0 vs 0.179. Caveat: this cohort is the earliest-adopter slice (lowest user
+ids), so the uniform-sample rerun in §0.6 is the cleaner generalization.
 
 ---
 

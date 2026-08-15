@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import random
 import sys
 from pathlib import Path
 
@@ -37,15 +38,23 @@ from recagent.state import load_state
 from recagent.tools import ToolRegistry
 
 SAMPLE = 200
+SEED = 42
 OUT = Path("results/ml20m/eval_agent200_ml20m.json")
 
 
-def main(artifacts_dir: str) -> None:
+def main(
+    artifacts_dir: str,
+    sample: int = SAMPLE,
+    seed: int = SEED,
+    out: str | None = None,
+) -> None:
     state = load_state(artifacts_dir)
     test_items = build_test_items(
-        state, "data", min_interactions=5, seed=42, data_kind="ml-20m"
+        state, "data", min_interactions=5, seed=seed, data_kind="ml-20m"
     )
-    test_items = {u: test_items[u] for u in sorted(test_items)[:SAMPLE]}
+    rng = random.Random(seed)
+    users = rng.sample(sorted(test_items), k=sample)
+    test_items = {u: test_items[u] for u in users}
 
     als = cf_baseline(state, test_items, kind="als", factors=24)
     print(f"als over {als['n_users']} users: HR@5 {als['hr']['5']:.4f} MRR {als['mrr']:.4f}")
@@ -92,7 +101,9 @@ def main(artifacts_dir: str) -> None:
 
     report = {
         "dataset": "ml-20m",
-        "sample": SAMPLE,
+        "sample": sample,
+        "seed": seed,
+        "cohort": "uniform random sample of LOO users (was first-200-by-id)",
         "k": 5,
         "als": {k2: v for k2, v in als.items() if k2 != "per_user_rank"},
         "als_per_user_rank": {str(u): r for u, r in als["per_user_rank"].items()},
@@ -111,8 +122,9 @@ def main(artifacts_dir: str) -> None:
         "bootstrap": boot,
         "context_engineering": "v2 (rating scale, per-item popularity/avg, social proof)",
     }
-    save_report(report, OUT)
-    print(f"wrote {OUT}")
+    out_path = Path(out) if out else OUT
+    save_report(report, out_path)
+    print(f"wrote {out_path}")
 
 
 def _rank(ids: list[int], target: int) -> int:
@@ -125,5 +137,8 @@ def _rank(ids: list[int], target: int) -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("artifacts_dir", nargs="?", default="artifacts")
+    parser.add_argument("--sample", type=int, default=SAMPLE)
+    parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--out", type=str, default=None)
     args = parser.parse_args()
-    main(args.artifacts_dir)
+    main(args.artifacts_dir, sample=args.sample, seed=args.seed, out=args.out)

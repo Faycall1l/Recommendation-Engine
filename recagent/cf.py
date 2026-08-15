@@ -301,7 +301,7 @@ class UserBasedCF:
             (saved["m_data"], (saved["m_row"], saved["m_col"])),
             shape=tuple(saved["m_shape"]),
         ).tocsr()
-        if int(saved["sim_sparse"]):
+        if "sim_sparse" in saved and int(saved["sim_sparse"]):
             obj.similarity = sp.coo_matrix(
                 (saved["sim_data"], (saved["sim_row"], saved["sim_col"])),
                 shape=tuple(saved["sim_shape"]),
@@ -461,7 +461,7 @@ class ItemBasedCF:
         ).tocsr()
         obj.item_means = saved["item_means"]
         obj.user_means = saved["user_means"]
-        if int(saved["sim_sparse"]):
+        if "sim_sparse" in saved and int(saved["sim_sparse"]):
             obj.similarity = sp.coo_matrix(
                 (saved["sim_data"], (saved["sim_row"], saved["sim_col"])),
                 shape=tuple(saved["sim_shape"]),
