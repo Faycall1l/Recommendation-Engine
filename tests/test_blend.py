@@ -36,4 +36,5 @@ def test_rank_blend_matches_pure_base_at_weight_one():
 
     base = UserBasedCF().fit(matrix)
     blend = RankBlend(base_kind="user", base_weight=1.0, top_k=10, k=60, seed=1).fit(matrix)
-    assert blend.recommend(matrix, 0, n=2) == base.recommend(matrix, 0, n=2)
+    # RRF rescales scores, so compare the item ordering only
+    assert [idx for idx, _ in blend.recommend(matrix, 0, n=2)] == [idx for idx, _ in base.recommend(matrix, 0, n=2)]
