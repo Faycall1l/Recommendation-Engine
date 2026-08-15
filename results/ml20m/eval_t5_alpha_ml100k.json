@@ -1,0 +1,22 @@
+{
+  "dataset": "ml-100k",
+  "note": "ratings scale the implicit ALS confidence weight",
+  "default_alpha_40": {
+    "hr@10": 0.2927,
+    "mrr": 0.1185
+  },
+  "results": {
+    "alpha1": {
+      "hr@10": 0.2927,
+      "mrr": 0.1185
+    },
+    "alpha5": {
+      "hr@10": 0.2513,
+      "mrr": 0.0993
+    },
+    "alpha20": {
+      "hr@10": 0.2185,
+      "mrr": 0.0663
+    }
+  }
+}

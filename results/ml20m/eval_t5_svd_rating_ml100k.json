@@ -1,0 +1,83 @@
+{
+  "dataset": "ml-100k",
+  "protocol": "5-fold rating CV",
+  "report": {
+    "svd": {
+      "rmse": 1.0192,
+      "rmse_std": 0.0084,
+      "mae": 0.7786,
+      "mae_std": 0.0042,
+      "config": {
+        "factors": 8,
+        "iterations": 20,
+        "regularization": 1.0,
+        "bias_shrinkage": 25.0
+      },
+      "per_fold": [
+        {
+          "rmse": 1.0245,
+          "mae": 0.7825,
+          "n": 20000
+        },
+        {
+          "rmse": 1.0186,
+          "mae": 0.7794,
+          "n": 20000
+        },
+        {
+          "rmse": 1.0316,
+          "mae": 0.7836,
+          "n": 20000
+        },
+        {
+          "rmse": 1.0076,
+          "mae": 0.7727,
+          "n": 20000
+        },
+        {
+          "rmse": 1.0135,
+          "mae": 0.7748,
+          "n": 20000
+        }
+      ]
+    },
+    "mf": {
+      "rmse": 0.992,
+      "rmse_std": 0.0049,
+      "mae": 0.7614,
+      "mae_std": 0.003,
+      "config": {
+        "factors": 6,
+        "iterations": 15,
+        "regularization": 1.0
+      },
+      "per_fold": [
+        {
+          "rmse": 0.9921,
+          "mae": 0.7603,
+          "n": 20000
+        },
+        {
+          "rmse": 0.9836,
+          "mae": 0.7576,
+          "n": 20000
+        },
+        {
+          "rmse": 0.999,
+          "mae": 0.7657,
+          "n": 20000
+        },
+        {
+          "rmse": 0.9919,
+          "mae": 0.7593,
+          "n": 20000
+        },
+        {
+          "rmse": 0.9936,
+          "mae": 0.7641,
+          "n": 20000
+        }
+      ]
+    }
+  }
+}

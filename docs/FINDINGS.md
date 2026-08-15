@@ -16,6 +16,12 @@ files so nothing here drifts from the actual runs.
 | `results/ml20m/eval_ranking_ml20m.json` | ml-20m LOO ranking, 2000-user sample | als / popular / random |
 | `results/ml20m/eval_ranking_longtail_ml20m.json` | ml-20m debiased long-tail LOO | same engines on 785 users |
 | `results/ml20m/eval_rating_ml20m.json` | ml-20m rating CV on a 3M-rating subsample | mf + mean baselines |
+| `results/ml20m/eval_t5_ranking_ml20m.json` | ml-20m LOO ranking (T5) | als / svd / popular / blend 0.3–0.7 |
+| `results/ml20m/eval_t5_ranking_longtail_ml20m.json` | ml-20m debiased long-tail LOO (T5) | same engines on 785 users |
+| `results/ml20m/eval_t5_als_factors_ml20m.json` | ml-20m LOO ranking, factor-count sweep | als f24 / f32 / blend(f24,0.7) |
+| `results/ml20m/eval_t5_als_factors_longtail_ml20m.json` | ml-20m debiased long-tail LOO, factor sweep | same engines on 785 users |
+| `results/ml20m/eval_t5_svd_rating_ml100k.json` | ml-100k rating CV | svd (tuned) vs mf (tuned) |
+| `results/ml20m/eval_t5_alpha_ml100k.json` | ml-100k LOO ranking, implicit-alpha probe | ratings scale the ALS confidence weight |
 
 Reproduce everything with:
 
@@ -84,7 +90,8 @@ The mean baselines improve slightly versus ml-100k (item-mean RMSE 1.0276 →
 0.9523) — more data, denser signals. `mf` stays competitive on MAE (0.7592,
 second-best) but its RMSE (1.0210) dips below the ml-100k 0.9920: at 20M the
 subsample is sparser per user (~22 ratings/user vs ~106), so the fixed 6-factor
-config is no longer optimal. The proper fix is the T5 biased-SVD work.
+config is no longer optimal. The T5 biased-SVD upgrade (Section 0.4) did *not*
+fix this — see the honest result there.
 
 **Conditioning finding (unit-weight ALS).** With the *shared defaults*
 (`factors=64, iterations=20, reg=0.1`) `mf` is broken at any scale: RMSE 1.7871
@@ -95,9 +102,56 @@ ml-100k figure of 0.9920 was produced with the tuned config; the protocol now
 supports and records per-engine config so this cannot be silently mismatched
 again.
 
----
+### 0.4 Classic-model upgrades (T5) — honest results at scale
 
-## 1. Rating prediction — 5-fold CV RMSE/MAE
+Two from-scratch engines were added and pushed at ml-20m: `BiasedMF` (kind
+`svd`, joint factor+bias ALS solve, `bias_shrinkage` regularizer) and an RRF
+`RankBlend` (kind `blend`, popularity fusion with the base ranker). Every probe
+below failed to beat the plain `als` f64 baseline. All numbers transcribed from
+the `eval_t5_*` files above.
+
+**Popularity fusion does not beat ALS** (`eval_t5_ranking_ml20m.json` + long-tail):
+
+| engine      | raw HR@10 | tail HR@10 |
+|-------------|-----------|------------|
+| als (f64)   | **0.2755**| **0.0420** |
+| blend 0.7   | 0.2655    | 0.0293     |
+| blend 0.5   | 0.2125    | 0.0051     |
+| blend 0.3   | 0.1445    | 0.0000     |
+| popular     | 0.0790    | 0.0000     |
+| svd (BiasedMF) | 0.0010 | 0.0013     |
+
+Every weight that leans on popularity degrades raw HR@10; at the tail any
+blend weight ≥0.5 collapses toward popularity's zero. Implicit ALS is strictly
+better than every fusion, so `blend` stays off the serving path.
+
+**Factor-count tuning does not transfer to 20M.** On ml-100k, fewer ALS
+factors *help* ranking: f24 HR@10 0.3001 / HR@5 0.2142 / MRR 0.1388 vs the f64
+default 0.2927 / 0.1919 / 0.1185. On ml-20m the same configs *hurt*
+(`eval_t5_als_factors_ml20m.json`): f32 0.2495 and f24 0.2295 raw HR@10 vs f64
+0.2755; tail f32 0.0229 and f24 0.0140 vs f64 0.0420. The factor optimum grows
+with the catalog, so f64 stays the serving config.
+
+**Biased MF does not beat unit-weight ALS on rating.** The joint solve
+(`svd`, 8/20/1.0, bias_shrinkage 25) on ml-100k CV (`eval_t5_svd_rating_ml100k.json`):
+RMSE 1.0192 ± 0.0084 vs `mf` 0.9920 ± 0.0049 — the added bias terms overfit
+(train RMSE 0.722 vs mf 0.732) and generalize worse. A pure Funk-SGD probe
+lands at ~1.01 as well. From-scratch implementations cannot reach the published
+0.93–0.95 SVD-class figures: that gap needs a tuned SGD (learning-rate
+schedules, adaptive rates), which is out of scope for these from-scratch engines.
+
+**Implicit `alpha` weighting hurts ranking.** Scaling the ratings so they
+dominate the ALS confidence weight (implicit's default is 1+40·r)
+(`eval_t5_alpha_ml100k.json`): raw LOO HR@10 falls 0.2927 → 0.2513 (alpha5) →
+0.2185 (alpha20). Treating ratings as pure confidence signals loses ranking
+information.
+
+**Bottom line.** At 20M the ALS-f64 ceiling stands: biased MF, popularity
+fusion, implicit-alpha weighting and factor-count tuning all fail to lift it,
+and RMSE-engineered predictors (`mf`, `svd`) rank at chance (HR@10 ≤ 0.0013).
+The T5 disappointments are written down here on purpose.
+
+---
 
 Transcribed from `results/eval_rating.json` (seed 42, deterministic splits).
 
@@ -117,8 +171,10 @@ Published default-parameter 5-fold numbers on the same ml-100k data
 **Verdict.** Our three from-scratch engines sit inside the memory-based
 family's published range on RMSE. The 0.89–0.95 SVD-class figures come from
 *biased* SGD objectives (per-user/per-item bias terms), not unit-weight ALS,
-so they are not a fair target for `recagent/mf.py`. MAE favours `mf` (0.7614,
-best of all six) because its residuals are tighter around zero.
+so they are not a fair target for `recagent/mf.py`. The `svd` BiasedMF engine
+added in T5 (Section 0.4) still does not reach them — the gap needs a tuned SGD
+implementation. MAE favours `mf` (0.7614, best of all six) because its
+residuals are tighter around zero.
 
 ## 2. Ranking — full 943-user leave-one-out
 
