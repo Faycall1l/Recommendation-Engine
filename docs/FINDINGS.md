@@ -9,7 +9,8 @@ files so nothing here drifts from the actual runs.
 | `results/eval_rating.json` | 5-fold CV rating prediction | 6 engines, RMSE ± std / MAE ± std |
 | `results/eval_ranking.json` | full 943-user leave-one-out | 6 rankers, HR / NDCG / MRR |
 | `results/eval_bootstrap.json` | paired bootstrap (2000 resamples) | all pairwise engine comparisons |
-| `results/eval_agent200.json` | 200-user LOO, k=5 | agent vs ALS + constraint eval |
+| `results/eval_agent200.json` | 200-user LOO, k=5 | agent vs ALS + constraint eval (context v1) |
+| `results/eval_agent200_v2.json` | 200-user LOO, k=5, same users | agent vs ALS + constraint eval (context v2) |
 | `results/eval_ranking_longtail.json` | debiased long-tail LOO (`exclude_head=0.02`) | 6 rankers on 773 users |
 | `results/eval_report_v2.json` | aggregate report | all of the above + verdicts |
 | `results/eval_report.json` | legacy 100-user LOO | early agent-vs-engines snapshot |
@@ -293,7 +294,34 @@ Where the agent earns its place is **explicit constraints**:
 | constraint | agent precision | pure-CF precision |
 |------------|-----------------|-------------------|
 | film-noir  | **1.0** (all 5 items compliant, all 200 users) | 0.043 |
-| sci-fi     | 1.0 | ~1.0 (degenerate: CF head is already ~100% sci-fi) |
+| sci-fi     | 1.0 | 0.145 |
+
+(§4 constraint numbers were re-verified from the saved per-user lists: the
+film-noir agent lists recompute to 1.0000 and the earlier "CF is ~100% sci-fi"
+note for the sci-fi row was a case-sensitive genre-lookup artifact — CF is in
+fact only ~14.5% sci-fi on this sample.)
+
+### Context engineering v2 rerun (`results/eval_agent200_v2.json`)
+
+Same 200 users, same protocol, same endpoint — only the evidence changed
+(rating scale, per-item popularity/avg-rating, social proof, calibrated score
+hint). The agent's raw-ranking deficit vs ALS is no longer significant:
+
+| metric | agent (v1) | agent (v2) | als (v2) | delta v2 (paired bootstrap) |
+|--------|------------|------------|----------|-----------------------------|
+| HR@5   | 0.070 | 0.160 | 0.230 | −0.070, 95% CI [−0.150, 0.010], p=0.099 |
+| MRR    | 0.036 | 0.092 | 0.138 | −0.046, 95% CI [−0.099, 0.008], p=0.094 |
+
+The agent more than doubled absolute hit rate (0.070 → 0.160) and closed the
+significant deficit (§4 p=0.004 → p=0.099). The v2 ALS baseline (0.230) uses
+the canonical fresh-fit model; §4's baseline (0.165) used the then-persisted
+artifact model, so baseline levels differ — the agent-side comparison (same
+users, same protocol) is the valid one.
+
+Constraint compliance with v2 is now a clean, non-degenerate win: sci-fi
+precision **1.0 vs 0.145** — 100% of agent picks carry the required genre
+while pure CF is only 14.5% sci-fi on this sample. This is the one thing the
+LLM layer provably adds over the engines.
 
 ## 5. Bottom line
 

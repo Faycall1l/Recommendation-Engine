@@ -64,7 +64,7 @@ def main(artifacts_dir: str) -> None:
     agent_ranks = {u: _rank(ids, test_items[u]) for u, _, ids in details if u in test_items}
 
     users = list(test_items)
-    agent_lists, cdetails = asyncio.run(
+    agent_lists, _cdetails = asyncio.run(
         constraint_eval(agent, deps, users, constraint="sci-fi", k=5, concurrency=8)
     )
     cf_top = cf_lists(state, users, n=5)
@@ -101,11 +101,11 @@ def main(artifacts_dir: str) -> None:
         "per_user": details,
         "constraint": {
             "genre": "sci-fi",
-            "agent_precision": agent_share.get("sci-fi", 0.0),
-            "cf_precision": cf_share.get("sci-fi", 0.0),
+            "agent_precision": genre_precision(agent_share, "sci-fi"),
+            "cf_precision": genre_precision(cf_share, "sci-fi"),
             "per_user": [
-                {"user_id": u, "cf": ids, "agent": agent_lists.get(u, [])}
-                for u, ids in cdetails
+                {"user_id": u, "cf": cf_top.get(u, []), "agent": agent_lists.get(u, [])}
+                for u in users
             ],
         },
         "bootstrap": boot,

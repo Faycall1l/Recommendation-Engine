@@ -1,5 +1,9 @@
+import argparse
 import asyncio
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from recagent.agent import RecAgent
 from recagent.config import load_llm_config
@@ -20,11 +24,11 @@ from recagent.state import load_state
 from recagent.tools import ToolRegistry
 
 SAMPLE = 200
-OUT = Path("results/eval_agent200.json")
+OUT = Path("results/eval_agent200_v2.json")
 
 
-def main():
-    state = load_state("artifacts")
+def main(artifacts_dir: str = "artifacts") -> None:
+    state = load_state(artifacts_dir)
     test_items = build_test_items(state, "data", min_interactions=5, seed=42)
     test_items = {u: test_items[u] for u in sorted(test_items)[:SAMPLE]}
 
@@ -42,7 +46,7 @@ def main():
     agent_ranks = {u: _rank(ids, test_items[u]) for u, _, ids in details if u in test_items}
 
     users = list(test_items)
-    agent_lists, cdetails = asyncio.run(
+    agent_lists, _cdetails = asyncio.run(
         constraint_eval(agent, deps, users, constraint="sci-fi", k=5, concurrency=8)
     )
     cf_top = cf_lists(state, users, n=5)
@@ -76,11 +80,15 @@ def main():
         "per_user": details,
         "constraint": {
             "genre": "sci-fi",
-            "agent_precision": agent_share.get("sci-fi", 0.0),
-            "cf_precision": cf_share.get("sci-fi", 0.0),
-            "per_user": [{"user_id": u, "cf": ids, "agent": agent_lists.get(u, [])} for u, ids in cdetails],
+            "agent_precision": genre_precision(agent_share, "sci-fi"),
+            "cf_precision": genre_precision(cf_share, "sci-fi"),
+            "per_user": [
+                {"user_id": u, "cf": cf_top.get(u, []), "agent": agent_lists.get(u, [])}
+                for u in users
+            ],
         },
         "bootstrap": boot,
+        "context_engineering": "v2 (rating scale, per-item popularity/avg, social proof)",
     }
     save_report(report, OUT)
     print(f"wrote {OUT}")
@@ -94,4 +102,7 @@ def _rank(ids, target):
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("artifacts_dir", nargs="?", default="artifacts")
+    args = parser.parse_args()
+    main(args.artifacts_dir)
