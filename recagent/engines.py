@@ -61,6 +61,7 @@ def build_engine(
     base_weight: float = 0.6,
     top_k: int = 200,
     rrf_k: int = 60,
+    bias_shrinkage: float = 25.0,
 ):
     """Fit and return the engine named by ``kind`` (see :data:`ENGINE_KINDS`).
 
@@ -84,7 +85,11 @@ def build_engine(
         ).fit(matrix)
     if kind == SVD:
         return BiasedMF(
-            factors=factors, iterations=iterations, regularization=regularization, seed=seed
+            factors=factors,
+            iterations=iterations,
+            regularization=regularization,
+            bias_shrinkage=bias_shrinkage,
+            seed=seed,
         ).fit(matrix)
     if kind == BLEND:
         return RankBlend(

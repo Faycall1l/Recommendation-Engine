@@ -50,24 +50,12 @@ class BiasedMF:
         self.item_bias = np.zeros(n_items)
         self.user_factors = rng.normal(0.0, 0.01, (n_users, self.factors))
         self.item_factors = rng.normal(0.0, 0.01, (n_items, self.factors))
-        lam = self.regularization
-        lam_b = self.bias_shrinkage
         for _ in range(self.iterations):
             self.item_factors, self.item_bias = self._solve(
-                matrix.T.tocsr(),
-                self.user_factors,
-                self.user_bias,
-                n_items,
-                lam,
-                lam_b,
+                matrix.T.tocsr(), self.user_factors, self.user_bias, n_items
             )
             self.user_factors, self.user_bias = self._solve(
-                matrix,
-                self.item_factors,
-                self.item_bias,
-                n_users,
-                lam,
-                lam_b,
+                matrix, self.item_factors, self.item_bias, n_users
             )
         return self
 
@@ -77,11 +65,18 @@ class BiasedMF:
         latent: np.ndarray,
         other_bias: np.ndarray,
         n_entities: int,
-        lam: float,
-        lam_b: float,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """One factor+bias pass for the entities of ``view`` (rows)."""
-        eye = lam * np.eye(self.factors)
+        """Joint factor+bias least squares for the entities of ``view`` (rows).
+
+        Each entity's own bias is fitted together with its factors via an
+        augmented design matrix ``[latent, 1]``, so the bias term cannot absorb
+        (or be absorbed by) the factors — the standard cause of biased-MF
+        underfitting. The global mean and the *other* side's bias are peeled
+        off first; the own bias is solved for in the same system as the factors.
+        """
+        dim = self.factors + 1
+        eye = np.zeros((dim, dim))
+        np.fill_diagonal(eye, [self.regularization] * self.factors + [self.bias_shrinkage])
         updated = np.zeros((n_entities, self.factors))
         bias = np.zeros(n_entities)
         for entity in range(n_entities):
@@ -92,10 +87,14 @@ class BiasedMF:
                 continue
             residuals = values - (self.mu + other_bias[cols])
             rated_latent = latent[cols]
-            a = rated_latent.T @ rated_latent + eye
-            factors = np.linalg.solve(a, rated_latent.T @ residuals)
-            updated[entity] = factors
-            bias[entity] = (residuals - rated_latent @ factors).sum() / (len(cols) + lam_b)
+            augmented = np.empty((len(cols), dim))
+            augmented[:, : self.factors] = rated_latent
+            augmented[:, self.factors] = 1.0
+            coef = np.linalg.solve(
+                augmented.T @ augmented + eye, augmented.T @ residuals
+            )
+            updated[entity] = coef[: self.factors]
+            bias[entity] = coef[self.factors]
         return updated, bias
 
     def predict(self, user_idx: int, item_idx: int) -> float:
