@@ -40,6 +40,12 @@ class UserList(BaseModel):
     users: list[UserEntry]
 
 
+class UserStats(BaseModel):
+    user_id: int
+    n_rated: int
+    mean_rating: float
+
+
 class ToolRegistry:
     """Binds the tools to a trained model state; pydantic-ai injects this as deps."""
 
@@ -100,6 +106,14 @@ class ToolRegistry:
                 )
             )
         return ItemList(user_id=user_id, items=items)
+
+    def user_stats(self, user_id: int) -> UserStats:
+        """How many movies the user rated and their average rating (1-5 scale)."""
+        user_idx = self.uid_to_idx[user_id]
+        row = self.matrix.getrow(user_idx)
+        n = int(row.nnz)
+        mean = float(row.data.mean()) if n else 0.0
+        return UserStats(user_id=user_id, n_rated=n, mean_rating=mean)
 
     def item_info(self, item_id: int) -> ItemEntry:
         """Metadata for a single item: title, genres, popularity."""

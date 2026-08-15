@@ -83,8 +83,12 @@ def test_usage_summary_empty():
 def test_evidence_warm_user():
     deps = ToolRegistry(build_state())
     text, meta = build_evidence({"user_id": 101, "k": 5, "genre": None}, deps)
+    assert "User rating context" in text
+    assert "mean rating" in text
     assert "User profile" in text
     assert "Collaborative filtering candidates" in text
+    assert "Social proof" in text
+    assert "watched " in text
     assert len(meta) > 0
 
 

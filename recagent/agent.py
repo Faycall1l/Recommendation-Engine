@@ -47,7 +47,9 @@ Rules:
 - Honor explicit constraints. If the request says every item must be a genre,
   every output item must carry that genre.
 - Rank best first: blend the engine score with fit to the user's taste and the
-  constraint. Justify each pick in one short sentence using the evidence.
+  constraint. Prefer items with strong popularity and average rating when scores
+  are close; items liked by the user's most similar neighbours are strong fits.
+- Justify each pick in one short sentence using the evidence.
 - Do not repeat an item. Output as many items as requested, but fewer is better
   than padding with items that violate a constraint or are not in the evidence.
 """
@@ -90,16 +92,24 @@ def build_plan(request: str, deps: ToolRegistry, default_k: int = 5) -> dict[str
 
 def _fmt(entry: Any, detail: str | None = None) -> str:
     genres = ", ".join(entry.genres) or "-"
-    suffix = f"  {detail}" if detail else ""
-    return f"- {entry.item_id}: {entry.title} [{genres}]{suffix}"
+    parts = [f"- {entry.item_id}: {entry.title} [{genres}]"]
+    if entry.rating_count:
+        parts.append(f"watched {entry.rating_count}x")
+    if entry.avg_rating is not None:
+        parts.append(f"avg {entry.avg_rating:.1f}")
+    if detail:
+        parts.append(detail)
+    return ", ".join(parts)
 
 
 def build_evidence(plan: dict[str, Any], deps: ToolRegistry) -> tuple[str, dict[int, set[str]]]:
     """Gather evidence through the tools; return (text block, item genre map).
 
-    Adaptive retrieval: warm users get profile + CF candidates; cold users fall
-    back to a popularity prior; a rare genre widens the pool through item-item
-    neighbours of the genre hits.
+    Adaptive retrieval: warm users get profile + CF candidates + social proof;
+    cold users fall back to a popularity prior; a rare genre widens the pool
+    through item-item neighbours of the genre hits. Every item carries its
+    popularity (times watched) and average rating so the model can weigh quality
+    against raw score.
     """
     meta: dict[int, set[str]] = {}
     uid, k = plan["user_id"], plan["k"]
@@ -111,17 +121,36 @@ def build_evidence(plan: dict[str, Any], deps: ToolRegistry) -> tuple[str, dict[
 
     lines: list[str] = []
     if uid in deps.uid_to_idx:
+        stats = deps.user_stats(uid)
+        lines.append(
+            f"User rating context (user_id: {uid}): {stats.n_rated} movies rated, "
+            f"mean rating {stats.mean_rating:.2f} (1-5 scale)."
+        )
         profile = deps.user_profile(uid, k=min(8, max(4, k)))
-        lines.append(f"User profile (user_id: {uid}, highest rated):")
+        lines.append("User profile (highest rated):")
         for entry in profile.items:
             lines.append(_fmt(entry, detail=f"rating {entry.rating}"))
         absorb(profile.items)
 
         candidates = deps.recommend(uid, n=20)
-        lines.append("Collaborative filtering candidates (engine score, best first):")
+        lines.append(
+            "Collaborative filtering candidates (engine score, best first; "
+            "scores are comparable within this list, higher is stronger):"
+        )
         for entry in candidates.items:
             lines.append(_fmt(entry, detail=f"score {entry.score}"))
         absorb(candidates.items)
+
+        social = deps.similar_users(uid, n=3)
+        if social.users:
+            lines.append("Social proof (what the most similar users like):")
+            for peer in social.users:
+                peer_profile = deps.user_profile(peer.user_id, k=3)
+                for entry in peer_profile.items:
+                    lines.append(
+                        _fmt(entry, detail=f"liked by similar user {peer.user_id}")
+                    )
+                absorb(peer_profile.items)
     else:
         lines.append(f"Cold-start user (user_id: {uid}) — no interaction history.")
         prior = deps.trending(n=20)
