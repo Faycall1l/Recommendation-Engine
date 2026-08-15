@@ -20,6 +20,7 @@ files so nothing here drifts from the actual runs.
 | `results/ml20m/eval_t5_ranking_longtail_ml20m.json` | ml-20m debiased long-tail LOO (T5) | same engines on 785 users |
 | `results/ml20m/eval_t5_als_factors_ml20m.json` | ml-20m LOO ranking, factor-count sweep | als f24 / f32 / blend(f24,0.7) |
 | `results/ml20m/eval_t5_als_factors_longtail_ml20m.json` | ml-20m debiased long-tail LOO, factor sweep | same engines on 785 users |
+| `results/ml20m/eval_t5_als_factors_ml100k.json` | ml-100k LOO ranking, factor-count sweep | als f24 / f32 / f64 |
 | `results/ml20m/eval_t5_svd_rating_ml100k.json` | ml-100k rating CV | svd (tuned) vs mf (tuned) |
 | `results/ml20m/eval_t5_alpha_ml100k.json` | ml-100k LOO ranking, implicit-alpha probe | ratings scale the ALS confidence weight |
 
@@ -127,10 +128,10 @@ better than every fusion, so `blend` stays off the serving path.
 
 **Factor-count tuning does not transfer to 20M.** On ml-100k, fewer ALS
 factors *help* ranking: f24 HR@10 0.3001 / HR@5 0.2142 / MRR 0.1388 vs the f64
-default 0.2927 / 0.1919 / 0.1185. On ml-20m the same configs *hurt*
-(`eval_t5_als_factors_ml20m.json`): f32 0.2495 and f24 0.2295 raw HR@10 vs f64
-0.2755; tail f32 0.0229 and f24 0.0140 vs f64 0.0420. The factor optimum grows
-with the catalog, so f64 stays the serving config.
+default 0.2927 / 0.1919 / 0.1185 (`eval_t5_als_factors_ml100k.json`). On ml-20m
+the same configs *hurt* (`eval_t5_als_factors_ml20m.json`): f32 0.2495 and f24
+0.2295 raw HR@10 vs f64 0.2755; tail f32 0.0229 and f24 0.0140 vs f64 0.0420.
+The factor optimum grows with the catalog, so f64 stays the serving config.
 
 **Biased MF does not beat unit-weight ALS on rating.** The joint solve
 (`svd`, 8/20/1.0, bias_shrinkage 25) on ml-100k CV (`eval_t5_svd_rating_ml100k.json`):
