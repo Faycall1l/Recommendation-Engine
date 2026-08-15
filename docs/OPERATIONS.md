@@ -19,7 +19,7 @@ use the LLM agent.
 python -m recagent.cli train --cf user          # default: user-based -> artifacts/
 python -m recagent.cli train --cf als           # -> artifacts_als/
 python -m recagent.cli train --cf item          # -> artifacts_item/
-python -m recagent.cli train --cf als --data-kind ml-20m   # big dataset (default ml-100k)
+python -m recagent.cli train --cf als --data-kind ml-20m   # big dataset -> artifacts_ml20m/
 ```
 
 (`mf` is a from-scratch explicit ALS built at eval time via
@@ -65,8 +65,8 @@ full-scale scripts for the numbers in `docs/FINDINGS.md` §0 are
 `scripts/run_ml20m_t5.py` (classic-model experiments, §0.4),
 `scripts/run_t5_probes.py` (svd rating + implicit-alpha probes), and
 `scripts/run_ml20m_agent.py` (agent eval on the ml-20m sample — needs a live
-vLLM endpoint and ml-20m-trained `artifacts/`, see `scripts/run_agent200.py`
-for the ml-100k equivalent).
+vLLM endpoint; the ml-20m-trained `artifacts_ml20m/` and the ml-100k
+equivalent `scripts/run_agent200.py` are both runnable now, see §0.5/§4).
 
 ## Serve
 

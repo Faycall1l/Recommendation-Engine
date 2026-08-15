@@ -13,7 +13,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from recagent.agent import RecAgent
 from recagent.config import load_llm_config
@@ -23,6 +26,7 @@ from recagent.evaluate import (
     cf_baseline,
     cf_lists,
     constraint_eval,
+    genre_precision,
     genre_share,
     hits_from_ranks,
     mrr_from_ranks,
@@ -66,7 +70,9 @@ def main(artifacts_dir: str) -> None:
     cf_top = cf_lists(state, users, n=5)
     agent_share = genre_share(state, agent_lists)
     cf_share = genre_share(state, cf_top)
-    print(f"sci-fi precision  agent {agent_share.get('sci-fi', 0.0):.4f}  cf {cf_share.get('sci-fi', 0.0):.4f}")
+    agent_prec = genre_precision(agent_share, "sci-fi")
+    cf_prec = genre_precision(cf_share, "sci-fi")
+    print(f"sci-fi precision  agent {agent_prec:.4f}  cf {cf_prec:.4f}")
 
     boot = None
     if als["per_user_rank"] and agent_ranks:

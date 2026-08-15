@@ -17,6 +17,7 @@ files so nothing here drifts from the actual runs.
 | `results/ml20m/eval_ranking_longtail_ml20m.json` | ml-20m debiased long-tail LOO | same engines on 785 users |
 | `results/ml20m/eval_rating_ml20m.json` | ml-20m rating CV on a 3M-rating subsample | mf + mean baselines |
 | `results/ml20m/eval_rating_ml20m_svd.json` | ml-20m rating CV on the same subsample | svd (tuned) + mf + mean baselines |
+| `results/ml20m/eval_agent200_ml20m.json` | ml-20m LOO, first 200 sampled users, k=5 | agent (context v2) vs als + sci-fi constraint |
 | `results/ml20m/eval_t5_ranking_ml20m.json` | ml-20m LOO ranking (T5) | als / svd / popular / blend 0.3–0.7 |
 | `results/ml20m/eval_t5_ranking_longtail_ml20m.json` | ml-20m debiased long-tail LOO (T5) | same engines on 785 users |
 | `results/ml20m/eval_t5_als_factors_ml20m.json` | ml-20m LOO ranking, factor-count sweep | als f24 / f32 / blend(f24,0.7) |
@@ -161,6 +162,29 @@ fusion, implicit-alpha weighting and factor-count tuning all fail to lift it,
 and RMSE-engineered predictors (`mf`, `svd`) rank at chance (HR@10 ≤ 0.0013).
 The T5 disappointments are written down here on purpose.
 
+### 0.5 Agentic reranker on the ml-20m sample (T6) (`results/ml20m/eval_agent200_ml20m.json`)
+
+Context engineering v2 (user rating scale, per-item popularity + average rating,
+social proof — see the §T6 commit `58a4358`) run over the live Gemma-4 endpoint
+on the first 200 users of the ml-20m LOO sample, k=5.
+
+| metric | agent | als    | delta (paired bootstrap) |
+|--------|-------|--------|--------------------------|
+| HR@5   | 0.165 | 0.205  | −0.040, 95% CI [−0.120, 0.035], p=0.331 |
+| MRR    | 0.111 | 0.157  | −0.046, 95% CI [−0.105, 0.011], p=0.118 |
+
+Unlike the ml-100k run (§4), the agent's deficit is **not statistically
+significant** on this sample (p=0.33 HR@5, p=0.12 MRR) and the gap is a third
+of the ml-100k size (−0.040 vs −0.095 HR@5). The richer context closed most of
+the gap even though it did not close it.
+
+The sci-fi constraint row on this sample is **degenerate**: the first 200 LOO
+users sorted by id are heavy sci-fi fans, and the agent's lists are
+byte-identical to the ALS lists (`agent == cf` for all 200 users; CF top-5 is
+100% sci-fi across 89 distinct items — Star Wars, Twelve Monkeys, The Matrix,
+...). Both precisions are 1.0, so the constraint test discriminates nothing
+here. Reported as a limitation, not a win.
+
 ---
 
 Transcribed from `results/eval_rating.json` (seed 42, deterministic splits).
@@ -281,7 +305,8 @@ Where the agent earns its place is **explicit constraints**:
    the tail.
 4. The agentic layer does not improve raw ranking on this dataset but provides
    the one thing pure CF cannot: **verifiable constraint compliance**
-   (film-noir precision 1.0 vs 0.043).
+   (film-noir precision 1.0 vs 0.043). On the ml-20m sample the raw-ranking gap
+   narrows to a non-significant −0.040 HR@5 (§0.5) with context engineering v2.
 
 ## 6. Limitations / threats to validity
 
@@ -295,13 +320,24 @@ Where the agent earns its place is **explicit constraints**:
 - **Bootstrap ties.** user-vs-popularity is a tie *on this sample*; the true
   ordering is unresolved.
 - **Constraint eval** used a genre hold-all-items-compliant design; it tests
-  compliance, not whether constrained recs are what users want.
+  compliance, not whether constrained recs are what users want. On the ml-20m
+  sample (§0.5) the sci-fi row is degenerate: the sampled users are heavy
+  sci-fi fans, both engine and agent are already 100% sci-fi, and the agent
+  copies the CF lists exactly.
+- **Agent sample bias (ml-20m).** The first-200-by-id LOO users are atypical
+  (early MovieLens adopters, heavy sci-fi); the raw-ranking gap measured on
+  them may not generalize to a uniform user sample.
 
 ## 7. Provenance
 
-- Data: MovieLens 100k (`data/`, fetched by `recagent.data.fetch_movielens`).
+- Data: MovieLens 100k (`data/`, fetched by `recagent.data.fetch_movielens`)
+  and MovieLens 20M (`data/ml-20m/`, fetched by `load_ratings_20m`).
 - Artefacts: `artifacts/`, `artifacts_user/`, `artifacts_item/`,
-  `artifacts_als/` (gitignored; regenerable via `train`).
+  `artifacts_als/` (ml-100k) and `artifacts_ml20m/` (ml-20m ALS f64)
+  (all gitignored; regenerable via `train`).
 - Seeds: all protocols seeded (default 42); bootstrap deterministic.
 - Engine config: `mf` factors=6 / iterations=15 / reg=1.0; `als` implicit
-  defaults; memory-based k=25, min_sim=0.1, k_sim=20.
+  defaults (f64), serving config confirmed at 20M; memory-based k=25,
+  min_sim=0.1, k_sim=20. `svd` 8/20/1.0 + bias_shrinkage=25.
+- Agent eval (§0.5, §4): live vLLM endpoint, Gemma-4-31B-it, temperature 0.1,
+  `scripts/run_ml20m_agent.py` / `scripts/run_agent200.py`.
