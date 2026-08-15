@@ -16,6 +16,7 @@ files so nothing here drifts from the actual runs.
 | `results/ml20m/eval_ranking_ml20m.json` | ml-20m LOO ranking, 2000-user sample | als / popular / random |
 | `results/ml20m/eval_ranking_longtail_ml20m.json` | ml-20m debiased long-tail LOO | same engines on 785 users |
 | `results/ml20m/eval_rating_ml20m.json` | ml-20m rating CV on a 3M-rating subsample | mf + mean baselines |
+| `results/ml20m/eval_rating_ml20m_svd.json` | ml-20m rating CV on the same subsample | svd (tuned) + mf + mean baselines |
 | `results/ml20m/eval_t5_ranking_ml20m.json` | ml-20m LOO ranking (T5) | als / svd / popular / blend 0.3–0.7 |
 | `results/ml20m/eval_t5_ranking_longtail_ml20m.json` | ml-20m debiased long-tail LOO (T5) | same engines on 785 users |
 | `results/ml20m/eval_t5_als_factors_ml20m.json` | ml-20m LOO ranking, factor-count sweep | als f24 / f32 / blend(f24,0.7) |
@@ -78,14 +79,20 @@ recommendation at this scale is the open challenge T5 targets.
 ### 0.3 Rating — 5-fold CV on 3M subsample (`results/ml20m/eval_rating_ml20m.json`)
 
 `mf` uses its tuned config (`factors=6, iterations=15, reg=1.0`) via the
-restored per-engine `engine_kwargs`; the mean baselines use the shared defaults.
+restored per-engine `engine_kwargs`; `svd` uses `8/20/1.0, bias_shrinkage=25`;
+the mean baselines use the shared defaults.
 
 | engine      | RMSE    | ±     | MAE     | ±     |
 |-------------|---------|-------|---------|-------|
 | item-mean   | 0.9523  | 0.0009| 0.7377  | 0.0006|
 | user-mean   | 0.9939  | 0.0011| 0.7708  | 0.0009|
 | mf (tuned)  | 1.0210  | 0.0013| 0.7592  | 0.0009|
+| svd (tuned) | 1.0249  | 0.0036| 0.7638  | 0.0025|
 | global-mean | 1.0521  | 0.0007| 0.8409  | 0.0006|
+
+The `svd` row comes from `results/ml20m/eval_rating_ml20m_svd.json`; the `mf`
+and mean rows reproduce `eval_rating_ml20m.json` exactly (same seed/subsample),
+which doubles as a determinism check on the protocol.
 
 The mean baselines improve slightly versus ml-100k (item-mean RMSE 1.0276 →
 0.9523) — more data, denser signals. `mf` stays competitive on MAE (0.7592,
@@ -133,13 +140,15 @@ the same configs *hurt* (`eval_t5_als_factors_ml20m.json`): f32 0.2495 and f24
 0.2295 raw HR@10 vs f64 0.2755; tail f32 0.0229 and f24 0.0140 vs f64 0.0420.
 The factor optimum grows with the catalog, so f64 stays the serving config.
 
-**Biased MF does not beat unit-weight ALS on rating.** The joint solve
-(`svd`, 8/20/1.0, bias_shrinkage 25) on ml-100k CV (`eval_t5_svd_rating_ml100k.json`):
-RMSE 1.0192 ± 0.0084 vs `mf` 0.9920 ± 0.0049 — the added bias terms overfit
-(train RMSE 0.722 vs mf 0.732) and generalize worse. A pure Funk-SGD probe
-lands at ~1.01 as well. From-scratch implementations cannot reach the published
-0.93–0.95 SVD-class figures: that gap needs a tuned SGD (learning-rate
-schedules, adaptive rates), which is out of scope for these from-scratch engines.
+**Biased MF does not beat unit-weight ALS on rating.** On ml-100k CV
+(`eval_t5_svd_rating_ml100k.json`) the joint solve (`svd`, 8/20/1.0,
+bias_shrinkage 25): RMSE 1.0192 ± 0.0084 vs `mf` 0.9920 ± 0.0049; on the ml-20m
+3M subsample (`eval_rating_ml20m_svd.json`): 1.0249 ± 0.0036 vs 1.0210 ± 0.0013
+— the added bias terms overfit (train RMSE 0.722 vs mf 0.732 on ml-100k) and
+generalize worse on both datasets. A pure Funk-SGD probe lands at ~1.01 as
+well. From-scratch implementations cannot reach the published 0.93–0.95
+SVD-class figures: that gap needs a tuned SGD (learning-rate schedules,
+adaptive rates), which is out of scope for these from-scratch engines.
 
 **Implicit `alpha` weighting hurts ranking.** Scaling the ratings so they
 dominate the ALS confidence weight (implicit's default is 1+40·r)
