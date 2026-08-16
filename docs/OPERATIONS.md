@@ -39,6 +39,24 @@ python -m recagent.cli recommend 196 --k 5 --genre "Sci-Fi"   # constrained
 python -m recagent.cli explain 196 64            # why this item for this user
 ```
 
+Agent pipeline flags (on `RecAgent` / CLI):
+
+| flag | default | purpose |
+|------|---------|---------|
+| `reflect` | `False` | enable post-ranking reflection loop (≤1 extra LLM call) |
+| `diversity` | `True` | MMR re-ranking for genre diversity in the top-k |
+| `lambda_param` | `0.5` | relevance/diversity tradeoff (1.0 = pure relevance) |
+
+Contrastive explanations — pass `recommended_ids` to include a "why this over
+the next-best alternative?" comparison:
+
+```python
+client.explain(user_id=196, item_id=64, recommended_ids={64, 12, 77})
+```
+
+The comparison finds the user's highest-rated item sharing a genre with the
+target that was NOT recommended, and appends a deterministic contrast string.
+
 ## Evaluate
 
 ```bash
@@ -73,6 +91,18 @@ now, see §0.5/§0.6/§0.7/§4; both scripts now support `--exclude-head` and
 write per-user agent + ALS rank lists so bootstraps can be recomputed
 offline).
 
+**Caching LOO splits** — pass `cache_dir` to `build_test_items` to persist
+computed splits to disk. On ml-20m this avoids the ~9 min re-derivation on
+every eval build:
+
+```python
+from recagent.evaluate import build_test_items
+test_items = build_test_items(state, data_dir, data_kind="ml-20m", cache_dir=".cache/splits")
+```
+
+Cache files are keyed by `(data_kind, seed, min_interactions, exclude_head)` and
+stored as `loo_split_{hash}.json` in the specified directory.
+
 Bootstrap recomputation without any LLM calls:
 
 ```bash
@@ -98,6 +128,21 @@ with RecommendClient("http://127.0.0.1:8000") as client:
     recs = client.recommend(user_id=196, k=5, filters={"genre": "Sci-Fi"})
     why  = client.explain(user_id=196, item_id=64)
 ```
+
+### Client retry and circuit breaker
+
+`RecClient` retries transient vLLM failures (HTTP 502/503/504, connection
+errors) with exponential backoff and jitter. Configure via constructor:
+
+| param | default | purpose |
+|-------|---------|---------|
+| `max_retries` | 3 | max retry attempts per request |
+| `retry_base_delay` | 1.0 | base delay in seconds (doubles each retry, ± jitter) |
+| `circuit_threshold` | 5 | consecutive failures before circuit opens |
+| `circuit_timeout` | 30 | seconds the circuit stays open before half-open probe |
+
+When the circuit is open, requests fail immediately with a clear error instead
+of waiting for timeouts.
 
 ## Files that matter
 
