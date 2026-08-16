@@ -341,3 +341,83 @@ def test_circuit_breaker_rejects_after_repeated_failures(tmp_path):
     # third call: circuit is open, rejected immediately without calling the agent
     with pytest.raises(ConnectionError, match="circuit breaker"):
         client.recommend(1, k=1)
+
+
+# ---------- contrastive explanation integration ----------
+
+
+def _explain_deps():
+    import tempfile
+
+    import numpy as np
+
+    from recagent.state import load_state, save_state
+
+    matrix = sp.csr_matrix(
+        np.asarray(
+            [
+                [5, 0, 1, 1, 5, 0, 0],
+                [4, 4, 0, 2, 4, 1, 0],
+                [5, 3, 0, 0, 2, 0, 0],
+                [0, 0, 5, 5, 0, 4, 3],
+            ],
+            dtype=float,
+        )
+    )
+    tmp = tempfile.mkdtemp()
+    state = {
+        "model": UserBasedCF().fit(matrix),
+        "matrix": matrix,
+        "uid_to_idx": {1: 0, 2: 1, 3: 2, 4: 3},
+        "iid_to_idx": {100: 0, 101: 1, 102: 2, 103: 3, 104: 4, 105: 5, 106: 6},
+        "user_ids": [1, 2, 3, 4],
+        "item_ids": [100, 101, 102, 103, 104, 105, 106],
+        "items_meta": {
+            100: {"title": "Star Wars", "genres": ["Sci-Fi", "Action"]},
+            101: {"title": "Dune", "genres": ["Sci-Fi"]},
+            102: {"title": "Casablanca", "genres": ["Drama"]},
+            103: {"title": "Jaws", "genres": ["Thriller"]},
+            104: {"title": "Alien", "genres": ["Sci-Fi", "Horror"]},
+            105: {"title": "Maltese Falcon", "genres": ["Film-Noir"]},
+            106: {"title": "Dumbo", "genres": ["Children"]},
+        },
+        "cf_kind": "user",
+    }
+    save_state(state, tmp)
+    return load_state(tmp)
+
+
+def test_client_explain_contrastive_with_recommended_ids(tmp_path):
+    client = RecClient(
+        state=_explain_deps(),
+        llm_config=DISABLED,
+        feedback_path=tmp_path / "f.jsonl",
+    )
+    # Dune (101) vs non-recommended alternatives sharing Sci-Fi
+    resp = client.explain_recommendation(1, 101, recommended_ids={101})
+    assert resp.explanation.contrast is not None
+    assert resp.explanation.contrast.alt_item_id in (100, 104)
+    assert "Chosen over" in resp.text
+
+
+def test_client_explain_no_contrast_without_ids(tmp_path):
+    client = RecClient(
+        state=_explain_deps(),
+        llm_config=DISABLED,
+        feedback_path=tmp_path / "f.jsonl",
+    )
+    resp = client.explain_recommendation(1, 101)
+    assert resp.explanation.contrast is None
+
+
+def test_client_async_explain_contrastive(tmp_path):
+    import asyncio
+
+    client = RecClient(
+        state=_explain_deps(),
+        llm_config=DISABLED,
+        feedback_path=tmp_path / "f.jsonl",
+    )
+    resp = asyncio.run(client.aexplain_recommendation(1, 101, recommended_ids={101}))
+    assert resp.explanation.contrast is not None
+    assert resp.explanation.contrast.alt_item_id in (100, 104)
