@@ -469,3 +469,76 @@ LLM layer provably adds over the engines.
   min_sim=0.1, k_sim=20. `svd` 8/20/1.0 + bias_shrinkage=25.
 - Agent eval (§0.5, §4): live vLLM endpoint, Gemma-4-31B-it, temperature 0.1,
   `scripts/run_ml20m_agent.py` / `scripts/run_agent200.py`.
+
+## 9. Code improvements (T7) — no new eval numbers, architectural
+
+The following are production-readiness improvements committed on `feat/ml-20m`.
+No new results JSON files — they improve reliability, extensibility and
+explainability of the existing system. 192 tests pass, ruff clean.
+
+### 9.1 Agent self-reflective multi-step ranking (`a98a2ce`)
+
+The agent pipeline gains a post-ranking reflection loop (opt-in via
+`reflect=True`). After the first LLM call emits a ranked list, a deterministic
+`_reflect_on_ranking` checks four properties:
+
+- too few items returned
+- constraint violations in the ranked list
+- insufficient coverage of evidence (did the LLM use the provided signals?)
+- genre diversity (are all k items the same genre?)
+
+When issues are found, a second targeted LLM call refines the list. The
+reflection is deterministic (no hallucinated checks) and adds ≤1 extra LLM call
+per recommendation.
+
+### 9.2 Agent diversity-aware top-k MMR (`6d09adc`)
+
+`_clean_items` gains `diversity=True` (default) and `lambda_param=0.5`. After
+deduplication and constraint filtering, items are re-ranked with Maximal
+Marginal Relevance using Jaccard similarity on genre sets. `lambda_param`
+controls the relevance/diversity tradeoff: 1.0 = pure relevance, 0.0 = pure
+diversity.
+
+### 9.3 BiasedMF batch scoring (`708f0f7`)
+
+`BiasedMF.score_all()` returns a dense `(n_users × n_items)` matrix, matching
+the interface of `ExplicitALS` and CF engines. This allows the evaluation
+protocol to score all users in a single call instead of per-user loops.
+
+### 9.4 Bootstrap Cohen's d effect size (`8e32de8`)
+
+`paired_bootstrap` now returns `cohens_d` (pooled-SD normalised mean
+difference) alongside the existing CI and p-value. This makes the magnitude of
+engine differences directly interpretable: |d| < 0.2 = negligible, 0.2–0.8 =
+small-to-medium, > 0.8 = large.
+
+### 9.5 Client retry with exponential backoff + circuit breaker (`d484f40`)
+
+`RecClient` gains production-grade resilience:
+
+- **Exponential backoff with jitter**: retries on transient vLLM failures
+  (HTTP 502/503/504, connection errors) with configurable `max_retries`
+  (default 3) and `retry_base_delay` (default 1.0 s).
+- **Circuit breaker**: `_CircuitBreaker` tracks consecutive failures; after
+  `circuit_threshold` (default 5) failures the circuit opens for
+  `circuit_timeout` (default 30 s), then transitions to half-open and retries
+  one request. This prevents cascading failures when the vLLM endpoint is down.
+- Both sync and async paths (`_run_with_retry` / `_arun_with_retry`) are
+  protected.
+
+### 9.6 Contrastive explanations (`23623e7`)
+
+`explain_recommendation` gains an optional `recommended_ids` parameter. When
+provided, the explanation includes a **contrastive comparison**: the user's
+highest-rated item sharing a genre with the target, but not in the recommended
+set. The comparison string ("Chosen over Alien: both share Sci-Fi; you rated
+Alien 5.0/5.") is appended to the snippet and included in the evidence block
+for LLM restatement. This answers "why this over the next-best alternative?"
+
+### 9.7 Disk-cached LOO splits (`b580512`)
+
+`build_test_items` gains `cache_dir`. When provided, the computed leave-one-out
+split is persisted as a JSON file keyed by a SHA-256 hash of the parameters
+(data_kind, seed, min_interactions, exclude_head). Subsequent calls with the
+same parameters load from cache, avoiding the expensive re-derivation. On
+ml-20m this reduces repeated eval build times from ~9 min to seconds.
