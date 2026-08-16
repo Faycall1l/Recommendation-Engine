@@ -12,6 +12,7 @@ files so nothing here drifts from the actual runs.
 | `results/eval_agent200.json` | 200-user LOO, k=5 | agent vs ALS + constraint eval (context v1) |
 | `results/eval_agent200_v2.json` | 200-user LOO, k=5, same users | agent vs ALS + constraint eval (context v2) |
 | `results/eval_agent200_tail.json` | ml-100k long-tail LOO (`exclude_head=0.2`), 200 users, k=5 | agent vs ALS on tail targets |
+| `results/ml20m/eval_agent200_ml20m_tail.json` | ml-20m long-tail LOO (`exclude_head=0.2`), 200 users, k=5 | agent vs ALS on tail targets (both at floor) |
 | `results/eval_ranking_longtail.json` | debiased long-tail LOO (`exclude_head=0.02`) | 6 rankers on 773 users |
 | `results/eval_report_v2.json` | aggregate report | all of the above + verdicts |
 | `results/eval_report.json` | legacy 100-user LOO | early agent-vs-engines snapshot |
@@ -242,6 +243,17 @@ non-significant, since those cohorts mix head and tail targets.
 
 Constraint eval was skipped for this run (`--no-constraint`); compliance on
 the tail is untested and the genre-compliant item supply on the tail is thin.
+
+### 0.8 The ml-20m strict tail is below top-k resolution (`results/ml20m/eval_agent200_ml20m_tail.json`)
+
+The §0.7 protocol at ml-20m scale (`exclude_head=0.2` on the 27k-item catalog,
+uniform seed-42 sample of 200 from 3018 tail users): **both the agent and ALS
+score exactly 0.000 on HR@1/@3/@5/@10 and MRR** (p=1.0, verified from the saved
+per-user ranks). ALS — the strongest engine in the study — cannot surface a
+single tail target even in top-10 for this cohort, so the strict tail task is
+below the resolution of top-k ranking at this catalog size. §0.7's measurable
+agent deficit at ml-100k does not "transfer" to ml-20m because the scale
+effect flattens both engines to the floor first.
 
 ---
 
