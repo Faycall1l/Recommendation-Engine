@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -66,7 +67,7 @@ class FeedbackEvent(BaseModel):
 
 
 class _CircuitBreaker:
-    """Fail-fast guard for a flaky endpoint.
+    """Thread-safe fail-fast guard for a flaky endpoint.
 
     States:
       CLOSED  — normal operation; consecutive failures counted.
@@ -86,25 +87,29 @@ class _CircuitBreaker:
         self._state = self.CLOSED
         self._failures = 0
         self._opened_at: float = 0.0
+        self._lock = threading.Lock()
 
     @property
     def state(self) -> str:
-        if self._state == self.OPEN and time.monotonic() - self._opened_at >= self.reset_timeout:
-            self._state = self.HALF_OPEN
-        return self._state
+        with self._lock:
+            if self._state == self.OPEN and time.monotonic() - self._opened_at >= self.reset_timeout:
+                self._state = self.HALF_OPEN
+            return self._state
 
     def record_success(self) -> None:
-        self._failures = 0
-        self._state = self.CLOSED
+        with self._lock:
+            self._failures = 0
+            self._state = self.CLOSED
 
     def record_failure(self) -> None:
-        self._failures += 1
-        if self._failures >= self.threshold:
-            self._state = self.OPEN
-            self._opened_at = time.monotonic()
-            logger.warning(
-                "circuit breaker opened after %d consecutive failures", self._failures
-            )
+        with self._lock:
+            self._failures += 1
+            if self._failures >= self.threshold:
+                self._state = self.OPEN
+                self._opened_at = time.monotonic()
+                logger.warning(
+                    "circuit breaker opened after %d consecutive failures", self._failures
+                )
 
     def allow_request(self) -> bool:
         st = self.state
