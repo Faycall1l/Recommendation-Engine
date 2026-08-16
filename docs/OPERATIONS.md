@@ -67,8 +67,9 @@ full-scale scripts for the numbers in `docs/FINDINGS.md` §0 are
 `scripts/run_ml20m_agent.py` (agent eval on the ml-20m sample — needs a live
 vLLM endpoint; `--sample/--seed/--out` control the cohort, default is a
 uniform seed-42 200-user sample; the ml-20m-trained `artifacts_ml20m/` and the
-ml-100k equivalent `scripts/run_agent200.py` are both runnable now, see
-§0.5/§0.6/§4).
+ml-100k equivalent `scripts/run_agent200.py` — which also takes
+`--exclude-head` (long-tail cohort) and `--no-constraint` — are both runnable
+now, see §0.5/§0.6/§0.7/§4).
 
 ## Serve
 

@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import random
 import sys
 from pathlib import Path
 
@@ -24,13 +25,25 @@ from recagent.state import load_state
 from recagent.tools import ToolRegistry
 
 SAMPLE = 200
+SEED = 42
 OUT = Path("results/eval_agent200_v2.json")
 
 
-def main(artifacts_dir: str = "artifacts") -> None:
+def main(
+    artifacts_dir: str = "artifacts",
+    sample: int = SAMPLE,
+    seed: int = SEED,
+    exclude_head: float | None = None,
+    out: str | None = None,
+    no_constraint: bool = False,
+) -> None:
     state = load_state(artifacts_dir)
-    test_items = build_test_items(state, "data", min_interactions=5, seed=42)
-    test_items = {u: test_items[u] for u in sorted(test_items)[:SAMPLE]}
+    test_items = build_test_items(
+        state, "data", min_interactions=5, seed=seed, exclude_head=exclude_head
+    )
+    rng = random.Random(seed)
+    users = rng.sample(sorted(test_items), k=min(sample, len(test_items)))
+    test_items = {u: test_items[u] for u in users}
 
     als = cf_baseline(state, test_items, kind="als")
     print(f"als over {als['n_users']} users: HR@5 {als['hr']['5']:.4f} MRR {als['mrr']:.4f}")
@@ -46,15 +59,26 @@ def main(artifacts_dir: str = "artifacts") -> None:
     agent_ranks = {u: _rank(ids, test_items[u]) for u, _, ids in details if u in test_items}
 
     users = list(test_items)
-    agent_lists, _cdetails = asyncio.run(
-        constraint_eval(agent, deps, users, constraint="sci-fi", k=5, concurrency=8)
-    )
-    cf_top = cf_lists(state, users, n=5)
-    agent_share = genre_share(state, agent_lists)
-    cf_share = genre_share(state, cf_top)
-    agent_prec = genre_precision(agent_share, "sci-fi")
-    cf_prec = genre_precision(cf_share, "sci-fi")
-    print(f"sci-fi precision  agent {agent_prec:.4f}  cf {cf_prec:.4f}")
+    constraint_block = None
+    if not no_constraint:
+        agent_lists, _cdetails = asyncio.run(
+            constraint_eval(agent, deps, users, constraint="sci-fi", k=5, concurrency=8)
+        )
+        cf_top = cf_lists(state, users, n=5)
+        agent_share = genre_share(state, agent_lists)
+        cf_share = genre_share(state, cf_top)
+        agent_prec = genre_precision(agent_share, "sci-fi")
+        cf_prec = genre_precision(cf_share, "sci-fi")
+        print(f"sci-fi precision  agent {agent_prec:.4f}  cf {cf_prec:.4f}")
+        constraint_block = {
+            "genre": "sci-fi",
+            "agent_precision": genre_precision(agent_share, "sci-fi"),
+            "cf_precision": genre_precision(cf_share, "sci-fi"),
+            "per_user": [
+                {"user_id": u, "cf": cf_top.get(u, []), "agent": agent_lists.get(u, [])}
+                for u in users
+            ],
+        }
 
     boot = None
     if als["per_user_rank"] and agent_ranks:
@@ -71,27 +95,27 @@ def main(artifacts_dir: str = "artifacts") -> None:
 
     report = {
         "dataset": "ml-100k",
-        "sample": SAMPLE,
+        "sample": len(users),
+        "seed": seed,
+        "cohort": (
+            f"uniform seed-{seed} sample"
+            if exclude_head is None
+            else f"long-tail uniform seed-{seed} sample (exclude_head={exclude_head})"
+        ),
+        "exclude_head": exclude_head,
         "k": 5,
         "als": {k2: v for k2, v in als.items() if k2 != "per_user_rank"},
         "als_per_user_rank": {str(u): r for u, r in als["per_user_rank"].items()},
         "agent": agent_metrics,
         "agent_per_user_rank": {str(u): r for u, r in agent_ranks.items()},
         "per_user": details,
-        "constraint": {
-            "genre": "sci-fi",
-            "agent_precision": genre_precision(agent_share, "sci-fi"),
-            "cf_precision": genre_precision(cf_share, "sci-fi"),
-            "per_user": [
-                {"user_id": u, "cf": cf_top.get(u, []), "agent": agent_lists.get(u, [])}
-                for u in users
-            ],
-        },
+        "constraint": constraint_block,
         "bootstrap": boot,
         "context_engineering": "v2 (rating scale, per-item popularity/avg, social proof)",
     }
-    save_report(report, OUT)
-    print(f"wrote {OUT}")
+    out_path = Path(out) if out else OUT
+    save_report(report, out_path)
+    print(f"wrote {out_path}")
 
 
 def _rank(ids, target):
@@ -104,5 +128,17 @@ def _rank(ids, target):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("artifacts_dir", nargs="?", default="artifacts")
+    parser.add_argument("--sample", type=int, default=SAMPLE)
+    parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--exclude-head", type=float, default=None)
+    parser.add_argument("--out", type=str, default=None)
+    parser.add_argument("--no-constraint", action="store_true")
     args = parser.parse_args()
-    main(args.artifacts_dir)
+    main(
+        args.artifacts_dir,
+        sample=args.sample,
+        seed=args.seed,
+        exclude_head=args.exclude_head,
+        out=args.out,
+        no_constraint=args.no_constraint,
+    )

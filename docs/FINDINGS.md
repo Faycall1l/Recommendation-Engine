@@ -11,6 +11,7 @@ files so nothing here drifts from the actual runs.
 | `results/eval_bootstrap.json` | paired bootstrap (2000 resamples) | all pairwise engine comparisons |
 | `results/eval_agent200.json` | 200-user LOO, k=5 | agent vs ALS + constraint eval (context v1) |
 | `results/eval_agent200_v2.json` | 200-user LOO, k=5, same users | agent vs ALS + constraint eval (context v2) |
+| `results/eval_agent200_tail.json` | ml-100k long-tail LOO (`exclude_head=0.2`), 200 users, k=5 | agent vs ALS on tail targets |
 | `results/eval_ranking_longtail.json` | debiased long-tail LOO (`exclude_head=0.02`) | 6 rankers on 773 users |
 | `results/eval_report_v2.json` | aggregate report | all of the above + verdicts |
 | `results/eval_report.json` | legacy 100-user LOO | early agent-vs-engines snapshot |
@@ -214,6 +215,33 @@ agent precision **1.0 vs CF 0.184**, agent lists *not* identical to ALS
 (0/200) — verified by recomputation from the saved per-user lists. A
 100%-compliant top-5 with zero list-copying is the agent's one consistently
 reproducible advantage over the engines.
+
+### 0.7 Agentic reranker on the ml-100k long tail (`results/eval_agent200_tail.json`)
+
+Same agent, protocol and endpoint as §4 — but the cohort is the **long tail**:
+the 200 users (uniform seed-42 sample of 278 candidates) whose held-out LOO
+target is *not* among the 20% most-popular items (`exclude_head=0.2`,
+Cremonesi–Koren–Turrin). This is where ALS itself collapses (HR@5 0.055 vs
+0.230 raw).
+
+| metric | agent | als    | delta (paired bootstrap) |
+|--------|-------|--------|--------------------------|
+| HR@1   | 0.000 | 0.025  | — |
+| HR@5   | 0.015 | 0.055  | −0.040, 95% CI [−0.075, −0.005], p=0.043 |
+| MRR    | 0.004 | 0.042  | −0.037, 95% CI [−0.064, −0.015], p=0.0045 |
+
+This is the **only statistically significant raw-ranking gap in the study —
+and it is negative**. On tail targets the agent is effectively unable to
+surface the held-out niche item (HR@1 = 0.0: it never ranks a tail target
+first, vs ALS 0.025). The popularity + social-proof context that carries the
+constrained-compliance win (and never hurt raw cohorts beyond noise) actively
+over-biases the top-5 toward head items here, while ALS's latent structure
+still reaches the tail at 4× the agent's hit rate. The deficit therefore
+*concentrates* on the tail — consistent with all raw-cohort results being
+non-significant, since those cohorts mix head and tail targets.
+
+Constraint eval was skipped for this run (`--no-constraint`); compliance on
+the tail is untested and the genre-compliant item supply on the tail is thin.
 
 ---
 

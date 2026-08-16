@@ -403,14 +403,30 @@ def build_test_items(
     min_interactions: int = 5,
     seed: int = 42,
     data_kind: str = "ml-100k",
+    exclude_head: float | None = None,
 ) -> dict[int, int]:
-    """Re-derive the exact leave-one-out split used at training time."""
+    """Re-derive the exact leave-one-out split used at training time.
+
+    ``exclude_head`` (0 <= f < 1) drops test targets among the ``f``
+    most-popular items, leaving a long-tail cohort (Cremonesi–Koren–Turrin).
+    """
     fetch, load_ratings_fn, _load_items = loaders(data_kind)
     dataset_dir = fetch(data_dir)
     users, items, ratings = load_ratings_fn(dataset_dir)
     _, (test_users, test_items) = leave_one_out(
         users, items, ratings, min_interactions=min_interactions, seed=seed
     )
+    if exclude_head is not None and not 0.0 <= exclude_head < 1.0:
+        raise ValueError(f"exclude_head must be in [0, 1), got {exclude_head!r}")
+    if exclude_head is not None:
+        head = head_item_ids(items, exclude_head)
+        pairs = [
+            (int(u), int(i))
+            for u, i in zip(test_users, test_items)
+            if int(i) not in head
+        ]
+        test_users = np.asarray([u for u, _ in pairs], dtype=int)
+        test_items = np.asarray([i for _, i in pairs], dtype=int)
     known = state["uid_to_idx"]
     return {int(u): int(i) for u, i in zip(test_users, test_items) if int(u) in known}
 
