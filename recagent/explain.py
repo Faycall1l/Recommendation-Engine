@@ -146,7 +146,7 @@ def _find_contrast(
     recommended_ids: set[int],
     *,
     score_a: float | None,
-    score_b: float | None,
+    cf_scores: dict[int, float] | None = None,
 ) -> ContrastComparison | None:
     """Find the best alternative the user likes and explain why this item was preferred.
 
@@ -170,6 +170,8 @@ def _find_contrast(
         return None
     candidates.sort(key=lambda x: -x[0])
     _, best = candidates[0]
+    # look up the actual contrastive item's CF score
+    score_b = (cf_scores or {}).get(best.item_id)
     # build the reason string
     shared = genres_a & set(best.genres)
     parts: list[str] = []
@@ -276,14 +278,13 @@ def explain_recommendation(
     # contrastive comparison: why this item over the best alternative?
     contrast = None
     if recommended_ids:
-        # find the alternative's engine score from the CF candidates
-        alt_score = None
-        for entry in deps.recommend(user_id, n=50).items:
-            if entry.item_id != item_id:
-                alt_score = float(entry.score or 0.0)
-                break
+        # build CF scores dict so _find_contrast can look up the alt's actual score
+        cf_scores = {
+            entry.item_id: float(entry.score or 0.0)
+            for entry in deps.recommend(user_id, n=50).items
+        }
         contrast = _find_contrast(
-            deps, user_id, item_id, recommended_ids, score_a=score, score_b=alt_score
+            deps, user_id, item_id, recommended_ids, score_a=score, cf_scores=cf_scores
         )
 
     explanation = Explanation(
