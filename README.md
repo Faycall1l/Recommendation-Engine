@@ -59,11 +59,23 @@ mean when no similar item is in the profile.
    collaborative-filtering candidates, item metadata, and — for cold-start
    users or rare genres — popularity priors and `similar_items` chains.
 3. one structured-output LLM call emits a ranked `RankedItems` list.
-4. `_clean_items` guardrails drop hallucinations, constraint violations and
+4. **reflection loop** (opt-in `reflect=True`) — deterministic post-ranking
+   checks (too few items, constraint violations, evidence coverage, genre
+   diversity); a second targeted LLM call fixes issues when found.
+5. **MMR diversity re-ranking** (`diversity=True`, `lambda_param=0.5`) — Jaccard
+   genre similarity prevents the top-k from being all-one-genre.
+6. `_clean_items` guardrails drop hallucinations, constraint violations and
    duplicates, capping the list at `k`.
 
 This sidesteps vLLM's flaky in-loop tool template (repeated identical calls,
 empty parts) while keeping the reasoning signal.
+
+### Client resilience
+
+`RecClient` retries transient vLLM failures (HTTP 502/503/504, connection
+errors) with exponential backoff and jitter. A built-in circuit breaker opens
+after 5 consecutive failures, preventing cascading timeouts when the endpoint
+is down.
 
 ## Quickstart
 
@@ -115,12 +127,16 @@ the loop — so the explanation is always grounded:
 - **engine score** and its **boost** over the user's mean rating;
 - **similar-taste** — items the user already rated that are item-item similar
   to the recommendation;
+- **contrastive comparison** — when `recommended_ids` is provided, the
+  explanation includes "why this over the next-best alternative?" (the user's
+  highest-rated genre-sharing item that was NOT recommended);
 - popularity and quality fallbacks for cold-start users.
 
 ```
 python -m recagent.cli explain 196 64        # CLI (LLM prose when enabled)
 POST /explain  {"user_id": 196, "item_id": 64}   # REST
 client.explain(user_id=196, item_id=64)          # SDK
+client.explain(user_id=196, item_id=64, recommended_ids={64, 12, 77})  # contrastive
 ```
 
 The LLM restates the evidence as fluent prose in a single structured-output
