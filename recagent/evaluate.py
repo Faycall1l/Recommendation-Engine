@@ -434,12 +434,32 @@ def build_test_items(
     seed: int = 42,
     data_kind: str = "ml-100k",
     exclude_head: float | None = None,
+    cache_dir: str | None = None,
 ) -> dict[int, int]:
     """Re-derive the exact leave-one-out split used at training time.
 
     ``exclude_head`` (0 <= f < 1) drops test targets among the ``f``
     most-popular items, leaving a long-tail cohort (Cremonesi–Koren–Turrin).
+
+    When ``cache_dir`` is provided the computed split is persisted to disk
+    and reused on subsequent calls with the same parameters, avoiding the
+    expensive re-derivation (especially on ml-20m where this takes ~9 min).
     """
+    import hashlib
+    import json
+    from pathlib import Path
+
+    # Build a deterministic cache key from the parameters
+    cache_key = hashlib.sha256(
+        f"{data_kind}:{seed}:{min_interactions}:{exclude_head}".encode()
+    ).hexdigest()[:16]
+
+    if cache_dir is not None:
+        cache_path = Path(cache_dir) / f"loo_split_{cache_key}.json"
+        if cache_path.exists():
+            raw = json.loads(cache_path.read_text())
+            return {int(k): int(v) for k, v in raw.items()}
+
     fetch, load_ratings_fn, _load_items = loaders(data_kind)
     dataset_dir = fetch(data_dir)
     users, items, ratings = load_ratings_fn(dataset_dir)
@@ -458,7 +478,16 @@ def build_test_items(
         test_users = np.asarray([u for u, _ in pairs], dtype=int)
         test_items = np.asarray([i for _, i in pairs], dtype=int)
     known = state["uid_to_idx"]
-    return {int(u): int(i) for u, i in zip(test_users, test_items) if int(u) in known}
+    result = {int(u): int(i) for u, i in zip(test_users, test_items) if int(u) in known}
+
+    if cache_dir is not None:
+        cache_path = Path(cache_dir)
+        cache_path.mkdir(parents=True, exist_ok=True)
+        (cache_path / f"loo_split_{cache_key}.json").write_text(
+            json.dumps({str(k): v for k, v in result.items()})
+        )
+
+    return result
 
 
 def genre_precision(share: dict[str, float], genre: str) -> float:

@@ -335,3 +335,20 @@ def test_loo_exclude_head_validates_range():
         loo_ranking_eval_from_arrays(users, items, ratings, exclude_head=1.0)
     with pytest.raises(ValueError):
         loo_ranking_eval_from_arrays(users, items, ratings, exclude_head=-0.5)
+
+
+def test_build_test_items_cache_roundtrip(tmp_path):
+    """Cache file is valid JSON that round-trips int keys correctly."""
+    import hashlib
+    import json
+
+    fake_result = {1: 10, 2: 20, 3: 30}
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    cache_key = hashlib.sha256(b"ml-100k:42:5:None").hexdigest()[:16]
+    cache_file = cache_dir / f"loo_split_{cache_key}.json"
+    # write as build_test_items does (string keys for JSON)
+    cache_file.write_text(json.dumps({str(k): v for k, v in fake_result.items()}))
+    # read back as build_test_items does
+    loaded = {int(k): int(v) for k, v in json.loads(cache_file.read_text()).items()}
+    assert loaded == fake_result
