@@ -202,3 +202,142 @@ def test_tools_work_with_user_cf_engine():
     items = deps.similar_items(12, n=2).items
     assert [e.item_id for e in items] == [11]
     assert [e.item_id for e in deps.trending(2).items] == [12, 11]
+
+
+# ---------- circuit breaker tests ----------
+
+from recagent.client import _CircuitBreaker
+
+
+def test_circuit_breaker_starts_closed():
+    cb = _CircuitBreaker(threshold=3)
+    assert cb.state == _CircuitBreaker.CLOSED
+    assert cb.allow_request() is True
+
+
+def test_circuit_breaker_opens_after_threshold():
+    cb = _CircuitBreaker(threshold=3)
+    for _ in range(3):
+        cb.record_failure()
+    assert cb.state == _CircuitBreaker.OPEN
+    assert cb.allow_request() is False
+
+
+def test_circuit_breaker_resets_on_success():
+    cb = _CircuitBreaker(threshold=3)
+    cb.record_failure()
+    cb.record_failure()
+    cb.record_success()
+    assert cb.state == _CircuitBreaker.CLOSED
+    assert cb.allow_request() is True
+    assert cb._failures == 0
+
+
+def test_circuit_breaker_goes_half_open_after_timeout():
+    cb = _CircuitBreaker(threshold=2, reset_timeout=0.01)
+    cb.record_failure()
+    cb.record_failure()
+    assert cb.state == _CircuitBreaker.OPEN
+    import time
+
+    time.sleep(0.02)
+    assert cb.state == _CircuitBreaker.HALF_OPEN
+    assert cb.allow_request() is True
+
+
+def test_circuit_breaker_closes_on_half_open_success():
+    cb = _CircuitBreaker(threshold=2, reset_timeout=0.01)
+    cb.record_failure()
+    cb.record_failure()
+    import time
+
+    time.sleep(0.02)
+    assert cb.state == _CircuitBreaker.HALF_OPEN
+    cb.record_success()
+    assert cb.state == _CircuitBreaker.CLOSED
+
+
+def test_circuit_breaker_reopens_on_half_open_failure():
+    cb = _CircuitBreaker(threshold=2, reset_timeout=0.01)
+    cb.record_failure()
+    cb.record_failure()
+    import time
+
+    time.sleep(0.02)
+    assert cb.state == _CircuitBreaker.HALF_OPEN
+    cb.record_failure()
+    assert cb.state == _CircuitBreaker.OPEN
+
+
+def test_retry_succeeds_after_transient_failure(tmp_path):
+    call_count = 0
+
+    class FlakyAgent:
+        config = SimpleNamespace(model="x")
+
+        def run(self, request, deps):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ConnectionError("transient")
+            return SimpleNamespace(
+                output=RankedItems(items=[RankedItem(item_id=10, reason="ok")]),
+                usage=lambda: SimpleNamespace(requests=1, request_tokens=10, response_tokens=5),
+            )
+
+    client = RecClient(
+        state=make_state(),
+        agent=FlakyAgent(),
+        feedback_path=tmp_path / "f.jsonl",
+        max_retries=3,
+        retry_base_delay=0.001,
+    )
+    resp = client.recommend(1, k=1)
+    assert resp.items[0].item_id == 10
+    assert call_count == 3
+
+
+def test_retry_gives_up_after_max_retries(tmp_path):
+    class AlwaysFailAgent:
+        config = SimpleNamespace(model="x")
+
+        def run(self, request, deps):
+            raise ConnectionError("permanent")
+
+    client = RecClient(
+        state=make_state(),
+        agent=AlwaysFailAgent(),
+        feedback_path=tmp_path / "f.jsonl",
+        max_retries=2,
+        retry_base_delay=0.001,
+    )
+    import pytest
+
+    with pytest.raises(ConnectionError):
+        client.recommend(1, k=1)
+
+
+def test_circuit_breaker_rejects_after_repeated_failures(tmp_path):
+    class AlwaysFailAgent:
+        config = SimpleNamespace(model="x")
+
+        def run(self, request, deps):
+            raise ConnectionError("down")
+
+    client = RecClient(
+        state=make_state(),
+        agent=AlwaysFailAgent(),
+        feedback_path=tmp_path / "f.jsonl",
+        max_retries=0,
+        circuit_threshold=2,
+    )
+    import pytest
+
+    # first two calls fail with the agent's error and trip the breaker
+    with pytest.raises(ConnectionError, match="down"):
+        client.recommend(1, k=1)
+    with pytest.raises(ConnectionError, match="down"):
+        client.recommend(1, k=1)
+    # third call: circuit is open, rejected immediately without calling the agent
+    with pytest.raises(ConnectionError, match="circuit breaker"):
+        client.recommend(1, k=1)

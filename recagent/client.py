@@ -4,11 +4,17 @@ One import surface for the whole pipeline: recommendation requests with
 structured filters, free-form chat, item explanations, and feedback capture.
 When no LLM endpoint is configured the client degrades gracefully to the raw
 collaborative filter, so it is usable without any model weights.
+
+Includes retry with exponential backoff for transient vLLM failures and a
+circuit breaker that opens after repeated failures to avoid hammering a
+struggling endpoint.
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +25,8 @@ from recagent.config import LLMConfig, load_llm_config
 from recagent.explain import Explanation, RecExplainer, explain_recommendation
 from recagent.state import load_state
 from recagent.tools import ToolRegistry
+
+logger = logging.getLogger(__name__)
 
 
 class Recommendation(BaseModel):
@@ -57,6 +65,52 @@ class FeedbackEvent(BaseModel):
     liked: bool
 
 
+class _CircuitBreaker:
+    """Fail-fast guard for a flaky endpoint.
+
+    States:
+      CLOSED  — normal operation; consecutive failures counted.
+      OPEN    — after ``threshold`` consecutive failures, all calls are
+                rejected immediately for ``reset_timeout`` seconds.
+      HALF_OPEN — after the timeout, one trial call is allowed; success
+                  closes the circuit, failure reopens it.
+    """
+
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+    def __init__(self, threshold: int = 3, reset_timeout: float = 30.0):
+        self.threshold = threshold
+        self.reset_timeout = reset_timeout
+        self._state = self.CLOSED
+        self._failures = 0
+        self._opened_at: float = 0.0
+
+    @property
+    def state(self) -> str:
+        if self._state == self.OPEN and time.monotonic() - self._opened_at >= self.reset_timeout:
+            self._state = self.HALF_OPEN
+        return self._state
+
+    def record_success(self) -> None:
+        self._failures = 0
+        self._state = self.CLOSED
+
+    def record_failure(self) -> None:
+        self._failures += 1
+        if self._failures >= self.threshold:
+            self._state = self.OPEN
+            self._opened_at = time.monotonic()
+            logger.warning(
+                "circuit breaker opened after %d consecutive failures", self._failures
+            )
+
+    def allow_request(self) -> bool:
+        st = self.state
+        return st in (self.CLOSED, self.HALF_OPEN)
+
+
 def _to_recommendations(
     ranked: Any, deps: ToolRegistry, *, scores: dict[int, float] | None = None
 ) -> list[Recommendation]:
@@ -88,6 +142,10 @@ class RecClient:
         explainer: RecExplainer | None = None,
         llm_config: LLMConfig | None = None,
         feedback_path: str | Path | None = None,
+        max_retries: int = 3,
+        retry_base_delay: float = 1.0,
+        circuit_threshold: int = 3,
+        circuit_timeout: float = 30.0,
     ):
         self.state = state if state is not None else load_state(str(artifacts))
         self.deps = ToolRegistry(self.state)
@@ -101,6 +159,9 @@ class RecClient:
         self.feedback_path = (
             Path(feedback_path) if feedback_path else Path(str(artifacts)) / "feedback.jsonl"
         )
+        self.max_retries = max_retries
+        self.retry_base_delay = retry_base_delay
+        self._breaker = _CircuitBreaker(threshold=circuit_threshold, reset_timeout=circuit_timeout)
 
     # -- low-level ----------------------------------------------------------
 
@@ -122,6 +183,60 @@ class RecClient:
             self.deps,
             scores=self._cf_scores(user_id),
         )
+
+    def _run_with_retry(self, request: str) -> Any:
+        """Run the agent with exponential backoff retry + circuit breaker."""
+        import random
+
+        if not self._breaker.allow_request():
+            raise ConnectionError("circuit breaker open — LLM endpoint unreachable")
+        last_exc: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                result = self.agent.run(request, self.deps)
+                self._breaker.record_success()
+                return result
+            except Exception as exc:  # noqa: BLE001 — retry all transient LLM failures
+                last_exc = exc
+                self._breaker.record_failure()
+                if attempt < self.max_retries:
+                    delay = self.retry_base_delay * (2**attempt) * (0.5 + random.random() * 0.5)
+                    logger.warning(
+                        "LLM call failed (attempt %d/%d), retrying in %.1fs: %s",
+                        attempt + 1,
+                        self.max_retries + 1,
+                        delay,
+                        exc,
+                    )
+                    time.sleep(delay)
+        raise last_exc  # type: ignore[misc]
+
+    async def _arun_with_retry(self, request: str) -> Any:
+        """Async run the agent with exponential backoff retry + circuit breaker."""
+        import random
+
+        if not self._breaker.allow_request():
+            raise ConnectionError("circuit breaker open — LLM endpoint unreachable")
+        last_exc: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                result = await self.agent.arun(request, self.deps)
+                self._breaker.record_success()
+                return result
+            except Exception as exc:  # noqa: BLE001 — retry all transient LLM failures
+                last_exc = exc
+                self._breaker.record_failure()
+                if attempt < self.max_retries:
+                    delay = self.retry_base_delay * (2**attempt) * (0.5 + random.random() * 0.5)
+                    logger.warning(
+                        "LLM call failed (attempt %d/%d), retrying in %.1fs: %s",
+                        attempt + 1,
+                        self.max_retries + 1,
+                        delay,
+                        exc,
+                    )
+                    await asyncio.sleep(delay)
+        raise last_exc  # type: ignore[misc]
 
     # -- public API ----------------------------------------------------------
 
@@ -157,7 +272,7 @@ class RecClient:
                     for e in self.deps.recommend(user_id, n=k).items
                 ]
             return RecommendResponse(user_id=user_id, k=k, items=items)
-        result = self.agent.run(request, self.deps)
+        result = self._run_with_retry(request)
         return RecommendResponse(
             user_id=user_id,
             k=k,
@@ -171,7 +286,7 @@ class RecClient:
         request = self._filters_request(user_id, k, filters)
         if self.agent is None:
             return await asyncio.to_thread(self.recommend, user_id, k, filters)
-        result = await self.agent.arun(request, self.deps)
+        result = await self._arun_with_retry(request)
         return RecommendResponse(
             user_id=user_id,
             k=k,
@@ -188,7 +303,7 @@ class RecClient:
             return ChatResponse(
                 user_id=user_id, items=[], evidence="agent disabled — CF only", usage={}
             )
-        result = self.agent.run(request, self.deps)
+        result = self._run_with_retry(request)
         items = self._from_agent(result, user_id or 0)
         plan = build_plan(request, self.deps)
         evidence, _, _ = build_evidence(plan, self.deps)
@@ -207,7 +322,7 @@ class RecClient:
             return ChatResponse(
                 user_id=user_id, items=[], evidence="agent disabled — CF only", usage={}
             )
-        result = await self.agent.arun(request, self.deps)
+        result = await self._arun_with_retry(request)
         items = self._from_agent(result, user_id or 0)
         plan = build_plan(request, self.deps)
         evidence, _, _ = build_evidence(plan, self.deps)
