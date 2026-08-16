@@ -197,22 +197,35 @@ its earlier strength as an artifact of head items being the held-out targets.
 ALS stays the strongest ranker on the strictly harder long-tail task; the
 memory-based `user` and explicit `mf` engines now beat raw popularity.
 
-### Agentic reranker — 200-user sample, k=5 (`results/eval_agent200.json`)
+### Agentic reranker — 200-user sample, k=5 (`results/eval_agent200_v2.json`)
 
-| metric | agent | als    | delta (bootstrap) |
-|--------|-------|--------|-------------------|
-| HR@5   | 0.070 | 0.165  | −0.095, p=0.004 |
-| MRR    | 0.036 | 0.119  | −0.083, p=0.004 |
+| metric | agent (v1) | agent (v2) | als (v2) | delta v2 (paired bootstrap) |
+|--------|------------|------------|----------|-----------------------------|
+| HR@5   | 0.070 | 0.160 | 0.230 | −0.070, 95% CI [−0.115, −0.030], p=0.002 |
+| MRR    | 0.036 | 0.092 | 0.138 | −0.046, 95% CI [−0.079, −0.016], p=0.005 |
 
-The ranking edge seen on the earlier 100-user sample did not replicate: the
-agent is significantly *below* ALS at raw LOO ranking on this data. Where it
-earns its place is explicit constraints — film-noir precision **1.0** (all 5
-items compliant for all 200 users) vs **0.043** for pure CF. (`sci-fi` was a
-degenerate constraint: the CF head is already ~100% sci-fi by popularity.)
+Context engineering v2 more than doubles the agent's absolute hit rate
+(0.070 → 0.160) but it remains significantly *below* ALS at raw LOO ranking.
+Where it earns its place is explicit constraints — with the genre-lookup
+artifact fixed, pure CF is only ~14.5% sci-fi on this sample, so the sci-fi
+row is a clean win: agent precision **1.0 vs 0.145** (and film-noir 1.0 vs
+0.043). The win reproduces on ml-20m (1.0 vs 0.179–0.184, lists never copies
+of CF). Bootstrap p-values in this section are recomputed with per-user
+aligned arrays; see §4 in [FINDINGS](docs/FINDINGS.md).
+
+### MovieLens 20M migration (`results/ml20m/*`, FINDINGS §0)
+
+Same protocol scaled to 20M ratings / 138k users / 27k items. Raw LOO on a
+uniform 200-user sample: agent HR@5 **0.140 vs ALS 0.200, p=0.021**
+(`eval_agent200_ml20m_uniform.json`) — the deficit is significant here too.
+On the strict long tail (`exclude_head=0.2`) both engines score 0.000 at all
+top-k, so the tail task is below top-k resolution at this catalog size.
 
 ### Bottom line
 
 The from-scratch engines are within the published default-parameter range on
 ml-100k rating prediction, and the implicit ALS is the strongest LOO ranker.
-The agentic layer does not help raw ranking on this dataset but provides the
-one thing pure CF cannot: verifiable constraint compliance.
+The agentic layer does not help raw ranking — the deficit vs ALS is
+statistically significant in most cohorts (ml-100k v1/v2, ml-20m uniform) —
+but it provides the one thing pure CF cannot: **verifiable constraint
+compliance** (1.0 vs 0.043–0.184 across datasets, zero list-copying).
