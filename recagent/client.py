@@ -191,7 +191,7 @@ class RecClient:
         result = self.agent.run(request, self.deps)
         items = self._from_agent(result, user_id or 0)
         plan = build_plan(request, self.deps)
-        evidence, _ = build_evidence(plan, self.deps)
+        evidence, _, _ = build_evidence(plan, self.deps)
         return ChatResponse(
             user_id=user_id,
             items=items,
@@ -210,7 +210,7 @@ class RecClient:
         result = await self.agent.arun(request, self.deps)
         items = self._from_agent(result, user_id or 0)
         plan = build_plan(request, self.deps)
-        evidence, _ = build_evidence(plan, self.deps)
+        evidence, _, _ = build_evidence(plan, self.deps)
         return ChatResponse(
             user_id=user_id,
             items=items,

@@ -5,6 +5,7 @@ from recagent.agent import (
     RankedItems,
     RecAgent,
     _clean_items,
+    _reflect_on_ranking,
     build_evidence,
     build_plan,
     detect_genre,
@@ -34,6 +35,14 @@ def test_agent_constructs_without_network():
     config = LLMConfig(enabled=True, base_url="http://localhost:9/v1", api_key="test-key", model="x")
     agent = RecAgent(config, state={})
     assert agent.agent.name == "recagent"
+
+
+def test_agent_reflect_flag():
+    config = LLMConfig(enabled=True, base_url="http://localhost:9/v1", api_key="test-key", model="x")
+    agent_on = RecAgent(config, state={}, reflect=True)
+    agent_off = RecAgent(config, state={}, reflect=False)
+    assert agent_on.reflect is True
+    assert agent_off.reflect is False
 
 
 def test_detect_genre_aliases():
@@ -82,7 +91,7 @@ def test_usage_summary_empty():
 
 def test_evidence_warm_user():
     deps = ToolRegistry(build_state())
-    text, meta = build_evidence({"user_id": 101, "k": 5, "genre": None}, deps)
+    text, meta, sections = build_evidence({"user_id": 101, "k": 5, "genre": None}, deps)
     assert "User rating context" in text
     assert "mean rating" in text
     assert "User profile" in text
@@ -90,18 +99,101 @@ def test_evidence_warm_user():
     assert "Social proof" in text
     assert "watched " in text
     assert len(meta) > 0
+    assert set(sections) == {"profile", "candidates", "social"}
 
 
 def test_evidence_cold_start_user():
     deps = ToolRegistry(build_state())
-    text, _ = build_evidence({"user_id": 99999, "k": 5, "genre": "Action"}, deps)
+    text, _, sections = build_evidence({"user_id": 99999, "k": 5, "genre": "Action"}, deps)
     assert "Cold-start user" in text
     assert "Popularity prior" in text
     assert "Search matches" in text
+    assert "trending" in sections
 
 
 def test_evidence_rare_genre_widens_via_similar_items():
     deps = ToolRegistry(build_state())
-    text, meta = build_evidence({"user_id": 101, "k": 12, "genre": "Action"}, deps)
+    text, meta, sections = build_evidence({"user_id": 101, "k": 12, "genre": "Action"}, deps)
     assert "Widened candidates" in text
     assert len(meta) >= 12
+    assert "genre_search" in sections
+
+
+# ---------- reflection tests ----------
+
+def test_reflect_no_issues_on_good_ranking():
+    plan = {"user_id": 1, "k": 3, "genre": None}
+    meta = {1: {"Drama"}, 2: {"Comedy"}, 3: {"Action"}}
+    sections = {"candidates": [1, 2, 3]}
+    items = [
+        RankedItem(item_id=1, reason="best"),
+        RankedItem(item_id=2, reason="good"),
+        RankedItem(item_id=3, reason="ok"),
+    ]
+    report = _reflect_on_ranking(items, plan=plan, meta=meta, evidence_sections=sections)
+    assert report.needs_refinement is False
+    assert report.issues == []
+
+
+def test_reflect_flags_too_few_after_cleaning():
+    plan = {"user_id": 1, "k": 5, "genre": "Sci-Fi"}
+    meta = {1: {"Sci-Fi"}, 2: {"Sci-Fi"}}  # only 2 valid items
+    sections = {"candidates": [1, 2]}
+    items = [
+        RankedItem(item_id=1, reason="a"),
+        RankedItem(item_id=2, reason="b"),
+    ]
+    report = _reflect_on_ranking(items, plan=plan, meta=meta, evidence_sections=sections)
+    assert report.needs_refinement is True
+    assert any("Only 2 of 5" in i for i in report.issues)
+
+
+def test_reflect_flags_constraint_violations_in_raw():
+    plan = {"user_id": 1, "k": 3, "genre": "Sci-Fi"}
+    meta = {1: {"Sci-Fi"}, 2: {"Drama"}, 3: {"Sci-Fi"}}
+    sections = {"candidates": [1, 2, 3]}
+    items = [
+        RankedItem(item_id=1, reason="ok"),
+        RankedItem(item_id=2, reason="violation"),
+        RankedItem(item_id=3, reason="ok"),
+    ]
+    report = _reflect_on_ranking(items, plan=plan, meta=meta, evidence_sections=sections)
+    assert report.needs_refinement is True
+    assert any("violate" in i and "Sci-Fi" in i for i in report.issues)
+
+
+def test_reflect_flags_missing_evidence_section():
+    plan = {"user_id": 1, "k": 2, "genre": None}
+    meta = {1: {"Drama"}, 2: {"Comedy"}, 10: {"Action"}}
+    sections = {"candidates": [1, 2], "social": [10]}
+    # pick only from candidates, ignore social entirely
+    items = [
+        RankedItem(item_id=1, reason="a"),
+        RankedItem(item_id=2, reason="b"),
+    ]
+    report = _reflect_on_ranking(items, plan=plan, meta=meta, evidence_sections=sections)
+    assert report.needs_refinement is True
+    assert any("social" in i for i in report.issues)
+
+
+def test_reflect_flags_low_diversity():
+    plan = {"user_id": 1, "k": 3, "genre": None}
+    meta = {1: {"Sci-Fi"}, 2: {"Sci-Fi"}, 3: {"Sci-Fi"}}
+    sections = {"candidates": [1, 2, 3]}
+    items = [
+        RankedItem(item_id=1, reason="a"),
+        RankedItem(item_id=2, reason="b"),
+        RankedItem(item_id=3, reason="c"),
+    ]
+    report = _reflect_on_ranking(items, plan=plan, meta=meta, evidence_sections=sections)
+    assert report.needs_refinement is True
+    assert any("identical genre" in i for i in report.issues)
+
+
+def test_reflect_single_item_no_diversity_flag():
+    plan = {"user_id": 1, "k": 1, "genre": None}
+    meta = {1: {"Sci-Fi"}}
+    sections = {"candidates": [1]}
+    items = [RankedItem(item_id=1, reason="only one")]
+    report = _reflect_on_ranking(items, plan=plan, meta=meta, evidence_sections=sections)
+    assert report.needs_refinement is False

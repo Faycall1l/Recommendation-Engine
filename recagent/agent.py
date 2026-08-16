@@ -1,9 +1,12 @@
 """The agentic recommender: a plan-then-execute agent over a vLLM-served Gemma-4.
 
-Plan   — the harness parses the request (user, item count, any genre constraint).
-Execute— the harness gathers evidence through the CF tool registry: the user's
-         taste profile, engine-ranked candidates, and constraint-matched items.
-Reason — one structured call to the LLM produces a typed, grounded ranked list.
+Plan    — the harness parses the request (user, item count, any genre constraint).
+Execute — the harness gathers evidence through the CF tool registry: the user's
+          taste profile, engine-ranked candidates, and constraint-matched items.
+Reason  — one structured call to the LLM produces a typed, grounded ranked list.
+Reflect — a deterministic self-check catches constraint violations, low diversity,
+          or poor evidence coverage; when issues are found a second targeted LLM
+          call fixes them before final cleaning.
 
 Tools stay first-class (they are planned and executed); running them from a
 deterministic harness instead of in the model's loop is dramatically more
@@ -35,6 +38,14 @@ class RankedItem(BaseModel):
 
 class RankedItems(BaseModel):
     items: list[RankedItem] = Field(description="ranked list, best first")
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ReflectionReport:
+    """Deterministic post-LLM quality check."""
+
+    issues: list[str]
+    needs_refinement: bool
 
 
 SYSTEM_PROMPT = """\
@@ -102,22 +113,31 @@ def _fmt(entry: Any, detail: str | None = None) -> str:
     return ", ".join(parts)
 
 
-def build_evidence(plan: dict[str, Any], deps: ToolRegistry) -> tuple[str, dict[int, set[str]]]:
-    """Gather evidence through the tools; return (text block, item genre map).
+def build_evidence(
+    plan: dict[str, Any], deps: ToolRegistry
+) -> tuple[str, dict[int, set[str]], dict[str, list[int]]]:
+    """Gather evidence through the tools; return (text block, item genre map, evidence sections).
 
     Adaptive retrieval: warm users get profile + CF candidates + social proof;
     cold users fall back to a popularity prior; a rare genre widens the pool
     through item-item neighbours of the genre hits. Every item carries its
     popularity (times watched) and average rating so the model can weigh quality
     against raw score.
+
+    The third return value maps section names to the item_ids they contributed,
+    used by the reflection step to check evidence coverage.
     """
     meta: dict[int, set[str]] = {}
+    sections: dict[str, list[int]] = {}
     uid, k = plan["user_id"], plan["k"]
     genre = plan.get("genre")
 
-    def absorb(items: list[Any]) -> None:
+    def absorb(items: list[Any], section: str) -> None:
+        ids: list[int] = []
         for entry in items:
             meta[entry.item_id] = set(entry.genres)
+            ids.append(entry.item_id)
+        sections[section] = ids
 
     lines: list[str] = []
     if uid in deps.uid_to_idx:
@@ -130,7 +150,7 @@ def build_evidence(plan: dict[str, Any], deps: ToolRegistry) -> tuple[str, dict[
         lines.append("User profile (highest rated):")
         for entry in profile.items:
             lines.append(_fmt(entry, detail=f"rating {entry.rating}"))
-        absorb(profile.items)
+        absorb(profile.items, "profile")
 
         candidates = deps.recommend(uid, n=20)
         lines.append(
@@ -139,32 +159,35 @@ def build_evidence(plan: dict[str, Any], deps: ToolRegistry) -> tuple[str, dict[
         )
         for entry in candidates.items:
             lines.append(_fmt(entry, detail=f"score {entry.score}"))
-        absorb(candidates.items)
+        absorb(candidates.items, "candidates")
 
         social = deps.similar_users(uid, n=3)
         if social.users:
             lines.append("Social proof (what the most similar users like):")
+            social_ids: list[int] = []
             for peer in social.users:
                 peer_profile = deps.user_profile(peer.user_id, k=3)
                 for entry in peer_profile.items:
                     lines.append(
                         _fmt(entry, detail=f"liked by similar user {peer.user_id}")
                     )
-                absorb(peer_profile.items)
+                    meta[entry.item_id] = set(entry.genres)
+                    social_ids.append(entry.item_id)
+            sections["social"] = social_ids
     else:
         lines.append(f"Cold-start user (user_id: {uid}) — no interaction history.")
         prior = deps.trending(n=20)
         lines.append("Popularity prior (most-watched across all users):")
         for entry in prior.items:
             lines.append(_fmt(entry, detail=f"rated {entry.rating_count}x"))
-        absorb(prior.items)
+        absorb(prior.items, "trending")
 
     if genre:
         hits = deps.search_items(genre, n=15)
         lines.append(f"Search matches for the requested genre ({genre}):")
         for entry in hits.items:
             lines.append(_fmt(entry))
-        absorb(hits.items)
+        absorb(hits.items, "genre_search")
 
         if len(hits.items) < k:
             widened: dict[int, Any] = {}
@@ -173,11 +196,12 @@ def build_evidence(plan: dict[str, Any], deps: ToolRegistry) -> tuple[str, dict[
                     widened.setdefault(neighbour.item_id, neighbour)
             if widened:
                 lines.append("Widened candidates (similar to the genre hits):")
-                for entry in list(widened.values())[:15]:
+                widened_items = list(widened.values())[:15]
+                for entry in widened_items:
                     lines.append(_fmt(entry, detail=f"similarity {entry.score}"))
-                absorb(list(widened.values()))
+                absorb(widened_items, "genre_widened")
 
-    return "\n".join(lines), meta
+    return "\n".join(lines), meta, sections
 
 
 def _clean_items(
@@ -201,6 +225,72 @@ def _clean_items(
     return kept[: plan["k"]]
 
 
+def _reflect_on_ranking(
+    raw_items: list[RankedItem],
+    *,
+    plan: dict[str, Any],
+    meta: dict[int, set[str]],
+    evidence_sections: dict[str, list[int]],
+) -> ReflectionReport:
+    """Deterministic post-LLM quality check.
+
+    Inspects the raw (pre-clean) ranking for four classes of issues and
+    returns a report; when ``needs_refinement`` is True the agent should
+    issue a second LLM call with the issues embedded in the prompt.
+    """
+    issues: list[str] = []
+    genre = plan.get("genre")
+    k = plan["k"]
+
+    cleaned = _clean_items(raw_items, plan=plan, meta=meta)
+
+    # 1. Output too short after cleaning — the LLM likely violated constraints
+    if len(cleaned) < k:
+        issues.append(
+            f"Only {len(cleaned)} of {k} requested items survive cleaning. "
+            f"Review the evidence block and ensure every item matches the "
+            f"{'genre constraint' if genre else 'request'}."
+        )
+
+    # 2. Raw constraint violation count (catches the problem source)
+    if genre:
+        violations = sum(
+            1
+            for it in raw_items
+            if it.item_id in meta and genre not in meta[it.item_id]
+        )
+        if violations > 0:
+            issues.append(
+                f"{violations} of {len(raw_items)} raw items violate the "
+                f"'{genre}' constraint. Every output item must carry '{genre}'."
+            )
+
+    # 3. Evidence coverage — the LLM should draw from multiple evidence sections
+    if evidence_sections and len(evidence_sections) > 1 and cleaned:
+        covered: set[str] = set()
+        for it in cleaned:
+            for section, ids in evidence_sections.items():
+                if it.item_id in ids:
+                    covered.add(section)
+        uncovered = set(evidence_sections) - covered
+        if uncovered:
+            issues.append(
+                f"The ranking uses no items from: {', '.join(sorted(uncovered))}. "
+                f"Include items from these evidence sections for better coverage."
+            )
+
+    # 4. Genre diversity — all surviving items share the exact same genre set
+    if len(cleaned) > 1:
+        genre_sets = [meta.get(it.item_id, set()) for it in cleaned]
+        if all(gs == genre_sets[0] for gs in genre_sets[1:]):
+            issues.append(
+                f"All {len(cleaned)} recommended items share identical genre(s): "
+                f"{genre_sets[0]}. Include more diverse items from the evidence."
+            )
+
+    return ReflectionReport(issues=issues, needs_refinement=bool(issues))
+
+
 class RecAgent:
     """Plan-then-execute recommender agent backed by an OpenAI-compatible vLLM model."""
 
@@ -211,10 +301,12 @@ class RecAgent:
         *,
         temperature: float = 0.1,
         max_requests: int = 12,
+        reflect: bool = True,
     ):
         self.config = config
         self.state = state
         self.max_requests = max_requests
+        self.reflect = reflect
         model = OpenAIChatModel(
             config.model,
             provider=OpenAIProvider(base_url=config.base_url, api_key=config.api_key),
@@ -232,11 +324,11 @@ class RecAgent:
         )
 
     async def arun(self, request: str, deps: ToolRegistry) -> Any:
-        """Plan, gather evidence, reason; returns a result with ``.output``."""
+        """Plan, gather evidence, reason, optionally reflect; returns a result with ``.output``."""
         from pydantic_ai.usage import UsageLimits
 
         plan = build_plan(request, deps)
-        evidence, meta = build_evidence(plan, deps)
+        evidence, meta, evidence_sections = build_evidence(plan, deps)
         prompt = (
             f"{evidence}\n\n"
             f"{request}\n"
@@ -246,8 +338,35 @@ class RecAgent:
             prompt,
             usage_limits=UsageLimits(request_limit=self.max_requests),
         )
-        output = result.output
-        items = _clean_items(output.items if output else [], plan=plan, meta=meta)
+        raw_items = result.output.items if result.output else []
+
+        if self.reflect:
+            reflection = _reflect_on_ranking(
+                raw_items,
+                plan=plan,
+                meta=meta,
+                evidence_sections=evidence_sections,
+            )
+            if reflection.needs_refinement:
+                feedback = "\n".join(
+                    f"Issue {i + 1}: {issue}"
+                    for i, issue in enumerate(reflection.issues)
+                )
+                refinement_prompt = (
+                    f"{evidence}\n\n"
+                    f"Your initial ranking had the following issues:\n"
+                    f"{feedback}\n\n"
+                    f"{request}\n"
+                    f"Output exactly {plan['k']} items, best first. "
+                    f"Fix the issues listed above."
+                )
+                result = await self.agent.run(
+                    refinement_prompt,
+                    usage_limits=UsageLimits(request_limit=self.max_requests),
+                )
+                raw_items = result.output.items if result.output else []
+
+        items = _clean_items(raw_items, plan=plan, meta=meta)
         return dataclasses.replace(result, output=RankedItems(items=items))
 
     def run(self, request: str, deps: ToolRegistry) -> Any:
