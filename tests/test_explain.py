@@ -127,7 +127,7 @@ class _FakeOutput:
 def test_explainer_grounded_restatement(deps):
     explanation = explain_recommendation(deps, 1, 101)
     fake = _FakeAgent(_FakeOutput("You rate sci-fi favourites like Star Wars 5/5 — Dune is the same pick."))
-    explainer = RecExplainer(LLMConfig(enabled=True), agent=fake)
+    explainer = RecExplainer(LLMConfig(enabled=True, api_key="test-key"), agent=fake)
     text, usage = explainer.explain(explanation)
     assert "Dune" in text
     assert usage["requests"] == 1
@@ -136,7 +136,7 @@ def test_explainer_grounded_restatement(deps):
 def test_explainer_falls_back_on_empty_output(deps):
     explanation = explain_recommendation(deps, 1, 101)
     fake = _FakeAgent(_FakeOutput("   "))
-    explainer = RecExplainer(LLMConfig(enabled=True), agent=fake)
+    explainer = RecExplainer(LLMConfig(enabled=True, api_key="test-key"), agent=fake)
     text, _ = explainer.explain(explanation)
     assert text == explanation.snippet  # guardrail: never an empty line
 

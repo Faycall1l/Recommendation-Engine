@@ -32,6 +32,10 @@ class LLMConfig(BaseModel):
             raise ValueError("model must be a non-empty string")
         return v
 
+    def model_post_init(self, __context: object, /) -> None:
+        if self.enabled and not self.api_key:
+            raise ValueError("api_key is required when enabled=True")
+
 
 class RecAgentConfig(BaseModel):
     """Agent behaviour tuning — controls the plan-reflect-diversify pipeline."""
