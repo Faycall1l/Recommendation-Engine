@@ -6080,22 +6080,23 @@
   "bootstrap": {
     "agent_vs_als_hit5": {
       "mean_diff": -0.06,
-      "ci_lo": -0.135,
-      "ci_hi": 0.01,
+      "ci_lo": -0.11,
+      "ci_hi": -0.015,
       "ci_level": 0.95,
       "n_boot": 2000,
-      "p_value": 0.133,
+      "p_value": 0.021,
       "n": 200
     },
     "agent_vs_als_mrr": {
       "mean_diff": -0.0242,
-      "ci_lo": -0.076,
-      "ci_hi": 0.0267,
+      "ci_lo": -0.0505,
+      "ci_hi": 0.0026,
       "ci_level": 0.95,
       "n_boot": 2000,
-      "p_value": 0.3505,
+      "p_value": 0.0745,
       "n": 200
     }
   },
-  "context_engineering": "v2 (rating scale, per-item popularity/avg, social proof)"
+  "context_engineering": "v2 (rating scale, per-item popularity/avg, social proof)",
+  "bootstrap_note": "recomputed with per-user aligned arrays (fixes str/int key misalignment)"
 }

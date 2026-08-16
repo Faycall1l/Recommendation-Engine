@@ -1,0 +1,86 @@
+{
+  "source": "results/eval_agent200_v2.json",
+  "exclude_head": 0.2,
+  "n_head_items": 336,
+  "n_users": 200,
+  "n_head_targets": 146,
+  "n_tail_targets": 54,
+  "subsets": {
+    "head": {
+      "n": 146,
+      "agent_hr5": 0.21232876712328766,
+      "als_hr5": 0.3013698630136986,
+      "agent_mrr": 0.1226027397260274,
+      "als_mrr": 0.17921015438138724,
+      "agent_vs_als_hit5": {
+        "mean_diff": -0.089,
+        "ci_lo": -0.1438,
+        "ci_hi": -0.0342,
+        "ci_level": 0.95,
+        "n_boot": 2000,
+        "p_value": 0.005,
+        "n": 146
+      },
+      "agent_vs_als_mrr": {
+        "mean_diff": -0.0566,
+        "ci_lo": -0.0985,
+        "ci_hi": -0.0187,
+        "ci_level": 0.95,
+        "n_boot": 2000,
+        "p_value": 0.005,
+        "n": 146
+      }
+    },
+    "tail": {
+      "n": 54,
+      "agent_hr5": 0.018518518518518517,
+      "als_hr5": 0.037037037037037035,
+      "agent_mrr": 0.009259259259259259,
+      "als_mrr": 0.02654320987654321,
+      "agent_vs_als_hit5": {
+        "mean_diff": -0.0185,
+        "ci_lo": -0.0556,
+        "ci_hi": 0.0,
+        "ci_level": 0.95,
+        "n_boot": 2000,
+        "p_value": 0.634,
+        "n": 54
+      },
+      "agent_vs_als_mrr": {
+        "mean_diff": -0.0173,
+        "ci_lo": -0.0574,
+        "ci_hi": 0.0074,
+        "ci_level": 0.95,
+        "n_boot": 2000,
+        "p_value": 0.4315,
+        "n": 54
+      }
+    },
+    "all": {
+      "n": 200,
+      "agent_hr5": 0.16,
+      "als_hr5": 0.23,
+      "agent_mrr": 0.092,
+      "als_mrr": 0.13799007936507934,
+      "agent_vs_als_hit5": {
+        "mean_diff": -0.07,
+        "ci_lo": -0.115,
+        "ci_hi": -0.03,
+        "ci_level": 0.95,
+        "n_boot": 2000,
+        "p_value": 0.002,
+        "n": 200
+      },
+      "agent_vs_als_mrr": {
+        "mean_diff": -0.046,
+        "ci_lo": -0.0793,
+        "ci_hi": -0.0159,
+        "ci_level": 0.95,
+        "n_boot": 2000,
+        "p_value": 0.005,
+        "n": 200
+      }
+    }
+  },
+  "note": "decomposes the raw ml-100k context-v2 cohort; no LLM calls"
+}

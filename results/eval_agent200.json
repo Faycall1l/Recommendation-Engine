@@ -6083,7 +6083,7 @@
     "agent_vs_als_hit5": {
       "mean_diff": -0.095,
       "ci_lo": -0.155,
-      "ci_hi": -0.035,
+      "ci_hi": -0.03,
       "ci_level": 0.95,
       "n_boot": 2000,
       "p_value": 0.004,
@@ -6091,13 +6091,14 @@
     },
     "agent_vs_als_mrr": {
       "mean_diff": -0.0828,
-      "ci_lo": -0.1275,
-      "ci_hi": -0.0404,
+      "ci_lo": -0.126,
+      "ci_hi": -0.0409,
       "ci_level": 0.95,
       "n_boot": 2000,
       "p_value": 0.0,
       "n": 200
     }
   },
-  "constraint_note": "sci-fi was degenerate (CF already ~100% sci-fi by popularity); film-noir is the discriminating genre."
+  "constraint_note": "sci-fi was degenerate (CF already ~100% sci-fi by popularity); film-noir is the discriminating genre.",
+  "bootstrap_note": "recomputed with per-user aligned arrays (fixes str/int key misalignment)"
 }

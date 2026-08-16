@@ -4,6 +4,7 @@ import scipy.sparse as sp
 
 from recagent.cf import build_cf
 from recagent.evaluate import (
+    aligned_rank_arrays,
     cf_baseline,
     cv_rating_eval_from_arrays,
     genre_precision,
@@ -230,6 +231,21 @@ def test_hits_from_ranks():
     ranks = {1: 3, 2: 1, 3: 0, 4: 5}
     assert hits_from_ranks(ranks, 5).tolist() == [1, 1, 0, 1]
     assert hits_from_ranks(ranks, 2).tolist() == [0, 1, 0, 0]
+
+
+def test_aligned_rank_arrays_pairs_by_user_not_position():
+    # int keys in one map, str keys in the other; per-user rank depends on the
+    # user id, so a misaligned (position-based) pairing would be detectable
+    baseline = {str(u): (1 if u % 2 == 0 else 0) for u in range(1, 11)}
+    agent = {u: (1 if u % 2 == 1 else 0) for u in range(1, 11)}
+    ha, hb, _ma, _mb, uids = aligned_rank_arrays(baseline, agent, 5)
+    assert uids == list(range(1, 11))
+    # index i must reference uids[i] for BOTH maps
+    for i, u in enumerate(uids):
+        assert ha[i] == float(baseline[str(u)] > 0)
+        assert hb[i] == float(agent[u] > 0)
+    # anti-correlated pairing: agent hits exactly where baseline misses
+    assert list(hb) == [1 - float(x) for x in ha]
 
 
 def test_paired_bootstrap_finds_separation():

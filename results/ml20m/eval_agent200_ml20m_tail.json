@@ -2696,5 +2696,6 @@
       "n": 200
     }
   },
-  "context_engineering": "v2 (rating scale, per-item popularity/avg, social proof)"
+  "context_engineering": "v2 (rating scale, per-item popularity/avg, social proof)",
+  "bootstrap_note": "recomputed with per-user aligned arrays (fixes str/int key misalignment)"
 }

@@ -10,14 +10,13 @@ from recagent.agent import RecAgent
 from recagent.config import load_llm_config
 from recagent.evaluate import (
     agent_baseline,
+    aligned_rank_arrays,
     build_test_items,
     cf_baseline,
     cf_lists,
     constraint_eval,
     genre_precision,
     genre_share,
-    hits_from_ranks,
-    mrr_from_ranks,
     paired_bootstrap,
     save_report,
 )
@@ -82,13 +81,12 @@ def main(
 
     boot = None
     if als["per_user_rank"] and agent_ranks:
-        ha = hits_from_ranks(als["per_user_rank"], 5)
-        hg = hits_from_ranks(agent_ranks, 5)
-        ma = mrr_from_ranks(als["per_user_rank"])
-        mg = mrr_from_ranks(agent_ranks)
+        _ha, _hg, _ma, _mg, _uids = aligned_rank_arrays(
+            als["per_user_rank"], agent_ranks, 5
+        )
         boot = {
-            "agent_vs_als_hit5": paired_bootstrap(hg, ha),
-            "agent_vs_als_mrr": paired_bootstrap(mg, ma),
+            "agent_vs_als_hit5": paired_bootstrap(_hg, _ha),
+            "agent_vs_als_mrr": paired_bootstrap(_mg, _ma),
         }
         b = boot["agent_vs_als_hit5"]
         print(f"agent vs als hit@5 {b['mean_diff']:+.4f} [{b['ci_lo']:.3f},{b['ci_hi']:.3f}] p={b['p_value']:.4f}")

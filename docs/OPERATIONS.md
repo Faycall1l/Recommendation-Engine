@@ -69,7 +69,18 @@ vLLM endpoint; `--sample/--seed/--out` control the cohort, default is a
 uniform seed-42 200-user sample; the ml-20m-trained `artifacts_ml20m/` and the
 ml-100k equivalent `scripts/run_agent200.py` — which also takes
 `--exclude-head` (long-tail cohort) and `--no-constraint` — are both runnable
-now, see §0.5/§0.6/§0.7/§4).
+now, see §0.5/§0.6/§0.7/§4; both scripts now support `--exclude-head` and
+write per-user agent + ALS rank lists so bootstraps can be recomputed
+offline).
+
+Bootstrap recomputation without any LLM calls:
+
+```bash
+# head/tail decomposition of the raw v2 cohort (uses saved per-user ranks)
+python scripts/run_agent_headtail.py --artifacts-dir artifacts_als2 \
+  --in results/eval_agent200_v2.json --exclude-head 0.2 \
+  --out results/eval_agent_headtail.json
+```
 
 ## Serve
 

@@ -225,6 +225,29 @@ def mrr_from_ranks(per_user_rank: dict[str, int] | dict[int, int]) -> np.ndarray
     return np.asarray([1.0 / per_user_rank[u] if per_user_rank[u] else 0.0 for u in uids])
 
 
+def aligned_rank_arrays(
+    ranks_a: dict[str, int] | dict[int, int],
+    ranks_b: dict[str, int] | dict[int, int],
+    k: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[int]]:
+    """Hit@k and MRR vectors for two {user: rank} maps, paired by user.
+
+    Ranks maps may mix int/str user ids (CF baselines save str keys, agent
+    runs build int keys); pairing by *position* after sorting each map
+    independently would misalign users. This normalizes both to int keys and
+    pairs on the sorted common users, returning (hit_a, hit_b, mrr_a, mrr_b,
+    uids).
+    """
+    a = {int(u): r for u, r in ranks_a.items()}
+    b = {int(u): r for u, r in ranks_b.items()}
+    uids = sorted(a.keys() & b.keys())
+    hit_a = hits_from_ranks({u: a[u] for u in uids}, k)
+    hit_b = hits_from_ranks({u: b[u] for u in uids}, k)
+    mrr_a = mrr_from_ranks({u: a[u] for u in uids})
+    mrr_b = mrr_from_ranks({u: b[u] for u in uids})
+    return hit_a, hit_b, mrr_a, mrr_b, uids
+
+
 def paired_bootstrap(
     a: np.ndarray,
     b: np.ndarray,

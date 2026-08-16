@@ -12,6 +12,7 @@ files so nothing here drifts from the actual runs.
 | `results/eval_agent200.json` | 200-user LOO, k=5 | agent vs ALS + constraint eval (context v1) |
 | `results/eval_agent200_v2.json` | 200-user LOO, k=5, same users | agent vs ALS + constraint eval (context v2) |
 | `results/eval_agent200_tail.json` | ml-100k long-tail LOO (`exclude_head=0.2`), 200 users, k=5 | agent vs ALS on tail targets |
+| `results/eval_agent_headtail.json` | head/tail decomposition of the raw v2 cohort | agent-vs-ALS deltas per target subset (no LLM calls) |
 | `results/ml20m/eval_agent200_ml20m_tail.json` | ml-20m long-tail LOO (`exclude_head=0.2`), 200 users, k=5 | agent vs ALS on tail targets (both at floor) |
 | `results/eval_ranking_longtail.json` | debiased long-tail LOO (`exclude_head=0.02`) | 6 rankers on 773 users |
 | `results/eval_report_v2.json` | aggregate report | all of the above + verdicts |
@@ -174,13 +175,13 @@ on the first 200 users of the ml-20m LOO sample, k=5.
 
 | metric | agent | als    | delta (paired bootstrap) |
 |--------|-------|--------|--------------------------|
-| HR@5   | 0.165 | 0.205  | −0.040, 95% CI [−0.120, 0.035], p=0.331 |
-| MRR    | 0.111 | 0.157  | −0.046, 95% CI [−0.105, 0.011], p=0.118 |
+| HR@5   | 0.165 | 0.205  | −0.040, 95% CI [−0.085, 0.000], p=0.089 |
+| MRR    | 0.111 | 0.157  | −0.046, 95% CI [−0.080, −0.014], p=0.010 |
 
-Unlike the ml-100k run (§4), the agent's deficit is **not statistically
-significant** on this sample (p=0.33 HR@5, p=0.12 MRR) and the gap is a third
-of the ml-100k size (−0.040 vs −0.095 HR@5). The richer context closed most of
-the gap even though it did not close it.
+The ml-20m first-200 cohort splits the picture: the HR@5 deficit is **not
+significant** (p=0.089, CI just touches zero) but the MRR deficit **is**
+(p=0.010). With the alignment correction (§4 note) the agent's raw-ranking
+deficit is significant more often than not across the study.
 
 The sci-fi constraint row on this sample is a **clean compliance win**, not a
 degenerate one: the agent returned 100% sci-fi lists (precision 1.0, verified
@@ -198,18 +199,19 @@ ids), so the uniform-sample rerun in §0.6 is the cleaner generalization.
 Same protocol, same endpoint, same model — but the cohort is a seeded uniform
 random sample (seed 42, 200 users) of the LOO split instead of the biased
 first-200-by-id slice. ALS HR@5 drops slightly on this more typical cohort
-(0.200 vs 0.205), and the agent's deficit narrows on MRR.
+(0.200 vs 0.205), and the agent's HR@5 deficit is significant on it:
 
 | metric | agent | als    | delta (paired bootstrap) |
 |--------|-------|--------|--------------------------|
-| HR@5   | 0.140 | 0.200  | −0.060, 95% CI [−0.135, 0.010], p=0.133 |
-| MRR    | 0.089 | 0.114  | −0.024, 95% CI [−0.076, 0.027], p=0.351 |
+| HR@5   | 0.140 | 0.200  | −0.060, 95% CI [−0.110, −0.015], p=0.021 |
+| MRR    | 0.089 | 0.114  | −0.024, 95% CI [−0.051, 0.003], p=0.075 |
 
-On the representative cohort the agent deficit is again **not significant**
-(HR@5 p=0.133, MRR p=0.351), and both deltas are smaller in magnitude than
-the first-200 slice suggested (§0.5: −0.040 / −0.046). The raw-ranking story
-is consistent across all three datasets: the agent trails ALS by ~0.02–0.09
-HR@5 without ever reaching significance.
+On the representative ml-20m cohort the agent's **HR@5 deficit is significant**
+(p=0.021); the MRR deficit is marginal (p=0.075, CI just touches zero). The
+raw-ranking story is now consistent across the study: with the bootstrap
+alignment fixed, the agent trails ALS by ~0.02–0.10 HR@5 and the deficit is
+significant in most cohorts (ml-100k v1/v2, ml-20m uniform; ml-20m first-200
+is marginal at p=0.089).
 
 The sci-fi constraint win reproduces cleanly on the representative cohort:
 agent precision **1.0 vs CF 0.184**, agent lists *not* identical to ALS
@@ -228,18 +230,29 @@ Cremonesi–Koren–Turrin). This is where ALS itself collapses (HR@5 0.055 vs
 | metric | agent | als    | delta (paired bootstrap) |
 |--------|-------|--------|--------------------------|
 | HR@1   | 0.000 | 0.025  | — |
-| HR@5   | 0.015 | 0.055  | −0.040, 95% CI [−0.075, −0.005], p=0.043 |
-| MRR    | 0.004 | 0.042  | −0.037, 95% CI [−0.064, −0.015], p=0.0045 |
+| HR@5   | 0.015 | 0.055  | −0.040, 95% CI [−0.070, −0.010], p=0.018 |
+| MRR    | 0.004 | 0.042  | −0.037, 95% CI [−0.063, −0.017], p=0.005 |
 
-This is the **only statistically significant raw-ranking gap in the study —
-and it is negative**. On tail targets the agent is effectively unable to
-surface the held-out niche item (HR@1 = 0.0: it never ranks a tail target
-first, vs ALS 0.025). The popularity + social-proof context that carries the
-constrained-compliance win (and never hurt raw cohorts beyond noise) actively
-over-biases the top-5 toward head items here, while ALS's latent structure
-still reaches the tail at 4× the agent's hit rate. The deficit therefore
-*concentrates* on the tail — consistent with all raw-cohort results being
-non-significant, since those cohorts mix head and tail targets.
+On tail targets the agent is effectively unable to surface the held-out niche
+item (HR@1 = 0.0: it never ranks a tail target first, vs ALS 0.025). The
+popularity + social-proof context that carries the constrained-compliance win
+actively over-biases the top-5 toward head items here, while ALS's latent
+structure reaches the tail at 4× the agent's hit rate.
+
+The head/tail decomposition of the raw §4 v2 cohort (`results/eval_agent_headtail.json`)
+shows the deficit is **not** specific to the tail — it concentrates on head
+targets:
+
+| subset (raw v2 cohort) | n   | agent HR@5 | als HR@5 | delta (paired bootstrap) |
+|------------------------|-----|------------|----------|--------------------------|
+| head targets           | 146 | 0.212 | 0.301 | −0.089, p=0.005 |
+| tail targets           | 54  | 0.019 | 0.037 | −0.018, p=0.634 |
+| all                    | 200 | 0.160 | 0.230 | −0.070, p=0.002 |
+
+So the agent loses broadly: the biggest, significant gap is on *head* targets
+(where the agent is 0.212 but ALS 0.301), and a dedicated tail cohort
+confirms a significant tail loss too (above). Both tails of the distribution
+favor the engine.
 
 Constraint eval was skipped for this run (`--no-constraint`); compliance on
 the tail is untested and the genre-compliant item supply on the tail is thin.
@@ -349,10 +362,17 @@ is real and not an artifact of head-item targets.
 
 ## 4. Agentic reranker — 200-user sample, k=5 (`results/eval_agent200.json`)
 
+> Bootstrap note: every agent-vs-ALS p-value in §4/§0.5–§0.8 was recomputed
+> with per-user **aligned** rank arrays. The original eval scripts paired
+> bootstrap arrays by position after sorting each map independently, which
+> mixed int-keyed agent ranks with str-keyed ALS ranks and inflated the
+> p-values (recorded e.g. p=0.099 → correct p=0.002). The JSON files carry a
+> `bootstrap_note`; the corrected numbers below are transcribed from them.
+
 | metric | agent | als    | delta (paired bootstrap) |
 |--------|-------|--------|--------------------------|
-| HR@5   | 0.070 | 0.165  | −0.095, 95% CI [−0.155, −0.035], p=0.004 |
-| MRR    | 0.036 | 0.119  | −0.083, 95% CI [−0.128, −0.040], p<0.001 |
+| HR@5   | 0.070 | 0.165  | −0.095, 95% CI [−0.155, −0.030], p=0.004 |
+| MRR    | 0.036 | 0.119  | −0.083, 95% CI [−0.126, −0.041], p<0.001 |
 
 **Verdict.** The ranking edge seen on the earlier 100-user sample did not
 replicate at 200 users: the agent is significantly **below** ALS at raw LOO
@@ -374,20 +394,21 @@ fact only ~14.5% sci-fi on this sample.)
 
 Same 200 users, same protocol, same endpoint — only the evidence changed
 (rating scale, per-item popularity/avg-rating, social proof, calibrated score
-hint). The agent's raw-ranking deficit vs ALS is no longer significant:
+hint). Context v2 more than doubles the agent's absolute hit rate, but the
+deficit vs ALS **remains statistically significant**:
 
 | metric | agent (v1) | agent (v2) | als (v2) | delta v2 (paired bootstrap) |
 |--------|------------|------------|----------|-----------------------------|
-| HR@5   | 0.070 | 0.160 | 0.230 | −0.070, 95% CI [−0.150, 0.010], p=0.099 |
-| MRR    | 0.036 | 0.092 | 0.138 | −0.046, 95% CI [−0.099, 0.008], p=0.094 |
+| HR@5   | 0.070 | 0.160 | 0.230 | −0.070, 95% CI [−0.115, −0.030], p=0.002 |
+| MRR    | 0.036 | 0.092 | 0.138 | −0.046, 95% CI [−0.079, −0.016], p=0.005 |
 
-The agent more than doubled absolute hit rate (0.070 → 0.160) and closed the
-significant deficit (§4 p=0.004 → p=0.099). The v2 ALS baseline (0.230) uses
-the canonical fresh-fit model; §4's baseline (0.165) used the then-persisted
-artifact model, so baseline levels differ — the agent-side comparison (same
-users, same protocol) is the valid one.
+The v2 ALS baseline (0.230) uses the canonical fresh-fit model; §4's baseline
+(0.165) used the then-persisted artifact model, so baseline levels differ —
+the agent-side comparison (same users, same protocol) is the valid one: the
+agent improved 0.070 → 0.160 HR@5 (2.3×) with context v2, but p=0.002 means
+the deficit did not close.
 
-Constraint compliance with v2 is now a clean, non-degenerate win: sci-fi
+Constraint compliance with v2 is a clean, non-degenerate win: sci-fi
 precision **1.0 vs 0.145** — 100% of agent picks carry the required genre
 while pure CF is only 14.5% sci-fi on this sample. This is the one thing the
 LLM layer provably adds over the engines.
@@ -400,10 +421,13 @@ LLM layer provably adds over the engines.
    long-tail task.
 3. Popularity's plain-LOO strength is a head-item artifact; it is at chance on
    the tail.
-4. The agentic layer does not improve raw ranking on this dataset but provides
-   the one thing pure CF cannot: **verifiable constraint compliance**
-   (film-noir precision 1.0 vs 0.043). On the ml-20m sample the raw-ranking gap
-   narrows to a non-significant −0.040 HR@5 (§0.5) with context engineering v2.
+4. The agentic layer does not improve raw ranking on this dataset — with the
+   bootstrap alignment corrected, the raw-ranking deficit vs ALS is
+   **statistically significant** in most cohorts (ml-100k v1 p=0.004, ml-100k
+   v2 p=0.002, ml-20m uniform p=0.021; ml-20m first-200 p=0.089 marginal) —
+   but it provides the one thing pure CF cannot: **verifiable constraint
+   compliance** (film-noir 1.0 vs 0.043, sci-fi 1.0 vs 0.145–0.184, lists
+   never copies of CF).
 
 ## 6. Limitations / threats to validity
 
@@ -417,13 +441,20 @@ LLM layer provably adds over the engines.
 - **Bootstrap ties.** user-vs-popularity is a tie *on this sample*; the true
   ordering is unresolved.
 - **Constraint eval** used a genre hold-all-items-compliant design; it tests
-  compliance, not whether constrained recs are what users want. On the ml-20m
-  sample (§0.5) the sci-fi row is degenerate: the sampled users are heavy
-  sci-fi fans, both engine and agent are already 100% sci-fi, and the agent
-  copies the CF lists exactly.
+  compliance, not whether constrained recs are what users want. The §0.5
+  sci-fi row was at one point misread as degenerate — that was a mislabeled
+  per-user-field artifact; the corrected numbers show a clean 1.0 vs 0.179
+  win (see §0.5).
 - **Agent sample bias (ml-20m).** The first-200-by-id LOO users are atypical
   (early MovieLens adopters, heavy sci-fi); the raw-ranking gap measured on
-  them may not generalize to a uniform user sample.
+  them may not generalize to a uniform user sample — §0.6's uniform rerun
+  shows the significant HR@5 deficit holds there too.
+- **Bootstrap alignment.** Early agent-eval runs paired bootstrap arrays by
+  position after sorting each map independently (str-keyed ALS vs int-keyed
+  agent ranks), inflating p-values. All recorded p-values were recomputed
+  with per-user aligned arrays (`aligned_rank_arrays`); the JSONs carry a
+  `bootstrap_note`. The corrected numbers make the agent's raw-ranking
+  deficit *more* significant, not less — it never reverses a constraint win.
 
 ## 7. Provenance
 
