@@ -344,13 +344,19 @@ class RecClient:
             "avg_rating": entry.avg_rating,
         }
 
-    def explain_recommendation(self, user_id: int, item_id: int) -> ExplanationResponse:
+    def explain_recommendation(
+        self, user_id: int, item_id: int, *, recommended_ids: set[int] | None = None
+    ) -> ExplanationResponse:
         """Why this item for this user: deterministic evidence + grounded prose.
 
         The LLM restates the evidence when enabled; otherwise the deterministic
         snippet stands in, so an explanation always exists.
+        When ``recommended_ids`` is provided the explanation includes a
+        contrastive comparison against the best alternative.
         """
-        explanation = explain_recommendation(self.deps, user_id, item_id)
+        explanation = explain_recommendation(
+            self.deps, user_id, item_id, recommended_ids=recommended_ids
+        )
         if self.explainer is None:
             return ExplanationResponse(
                 user_id=user_id, explanation=explanation, text=explanation.snippet, llm=False
@@ -361,9 +367,11 @@ class RecClient:
         )
 
     async def aexplain_recommendation(
-        self, user_id: int, item_id: int
+        self, user_id: int, item_id: int, *, recommended_ids: set[int] | None = None
     ) -> ExplanationResponse:
-        explanation = explain_recommendation(self.deps, user_id, item_id)
+        explanation = explain_recommendation(
+            self.deps, user_id, item_id, recommended_ids=recommended_ids
+        )
         if self.explainer is None:
             return ExplanationResponse(
                 user_id=user_id, explanation=explanation, text=explanation.snippet, llm=False

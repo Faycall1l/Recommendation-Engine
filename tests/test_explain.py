@@ -139,3 +139,43 @@ def test_explainer_falls_back_on_empty_output(deps):
     explainer = RecExplainer(LLMConfig(enabled=True), agent=fake)
     text, _ = explainer.explain(explanation)
     assert text == explanation.snippet  # guardrail: never an empty line
+
+
+# ---------- contrastive explanation tests ----------
+
+
+def test_contrastive_finds_alternative(deps):
+    # user 1 recommends Dune (101, Sci-Fi); Star Wars (100) and Alien (104)
+    # share Sci-Fi and are rated 5/5 but are NOT recommended -> contrast finds them
+    expl = explain_recommendation(deps, 1, 101, recommended_ids={101})
+    assert expl.contrast is not None
+    assert expl.contrast.alt_item_id in (100, 104)
+    assert expl.contrast.alt_title in ("Star Wars", "Alien")
+    assert "Sci-Fi" in expl.contrast.alt_genres
+    assert "Chosen over" in expl.contrast.reason
+
+
+def test_contrastive_none_without_recommended_ids(deps):
+    expl = explain_recommendation(deps, 1, 101)
+    assert expl.contrast is None
+
+
+def test_contrastive_none_when_no_shared_genre(deps):
+    # user 4 has no sci-fi; recommending Dune with Casablanca as only alternative
+    # they share no genres -> contrast should be None
+    expl = explain_recommendation(deps, 4, 101, recommended_ids={102, 101})
+    assert expl.contrast is None
+
+
+def test_contrastive_snippet_includes_comparison(deps):
+    expl = explain_recommendation(deps, 1, 101, recommended_ids={100, 101})
+    assert "Chosen over" in expl.snippet
+
+
+def test_contrastive_evidence_block_includes_contrast(deps):
+    from recagent.explain import _evidence_block
+
+    expl = explain_recommendation(deps, 1, 101, recommended_ids={100, 101})
+    block = _evidence_block(expl)
+    assert "contrastive:" in block
+    assert "Star Wars" in block

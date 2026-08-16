@@ -25,6 +25,16 @@ from recagent.tools import ItemEntry, ToolRegistry
 _COLD_START = "popularity"
 
 
+class ContrastComparison(BaseModel):
+    """Why this item was chosen over the best alternative."""
+
+    alt_item_id: int
+    alt_title: str
+    alt_genres: list[str] = Field(default_factory=list)
+    alt_score: float | None = None
+    reason: str = ""
+
+
 class Explanation(BaseModel):
     """The verifiable evidence behind one (user, item) recommendation."""
 
@@ -42,6 +52,7 @@ class Explanation(BaseModel):
     rating_count: int = 0
     basis: str = ""
     snippet: str = ""
+    contrast: ContrastComparison | None = None
 
     def render(self) -> str:
         """Deterministic one-sentence explanation — the no-LLM fallback."""
@@ -128,6 +139,58 @@ def _similar_rated(
     return out
 
 
+def _find_contrast(
+    deps: ToolRegistry,
+    user_id: int,
+    item_id: int,
+    recommended_ids: set[int],
+    *,
+    score_a: float | None,
+    score_b: float | None,
+) -> ContrastComparison | None:
+    """Find the best alternative the user likes and explain why this item was preferred.
+
+    The alternative is the user's highest-rated item that shares at least one
+    genre with the target but was *not* recommended.  If no such item exists,
+    returns None.
+    """
+    info_a = deps.items_meta.get(item_id, {})
+    genres_a = set(info_a.get("genres", []))
+    profile = deps.user_profile(user_id, k=10)
+    # find the best alternative: shares a genre with A, is rated highly, not recommended
+    candidates: list[tuple[float, ItemEntry]] = []
+    for entry in profile.items:
+        if entry.item_id in recommended_ids or entry.item_id == item_id:
+            continue
+        genres_b = set(entry.genres)
+        if not (genres_a & genres_b):
+            continue
+        candidates.append((entry.rating or 0.0, entry))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: -x[0])
+    _, best = candidates[0]
+    # build the reason string
+    shared = genres_a & set(best.genres)
+    parts: list[str] = []
+    if score_a is not None and score_b is not None:
+        diff = score_a - score_b
+        if diff > 0:
+            parts.append(f"engine score {score_a:.3f} vs {best.title}'s {score_b:.3f}")
+    if shared:
+        parts.append(f"both share {', '.join(sorted(shared))}")
+    if best.rating:
+        parts.append(f"you rated {best.title} {best.rating}/5")
+    reason = f"Chosen over {best.title}: {'; '.join(parts)}." if parts else f"Chosen over {best.title}."
+    return ContrastComparison(
+        alt_item_id=best.item_id,
+        alt_title=best.title,
+        alt_genres=list(best.genres),
+        alt_score=score_b,
+        reason=reason,
+    )
+
+
 def _snippet(explanation: Explanation) -> str:
     """A deterministic sentence that only repeats facts already computed."""
     likes = explanation.user_likes
@@ -142,26 +205,30 @@ def _snippet(explanation: Explanation) -> str:
         return f"{explanation.title} — no ratings yet."
     if similar:
         first = similar[0]
-        return (
+        base = (
             f"You rated {first.title}, which is similar to {explanation.title} "
             f"(similarity {first.score:.2f})."
         )
-    if explanation.matched_genres:
+    elif explanation.matched_genres:
         genre = explanation.matched_genres[0]
         like = likes[0] if likes else None
         prefix = (
             f"Alongside your {like.rating}/5 for {like.title}, " if like and like.rating else ""
         )
-        return f"{prefix}{explanation.title} fits your {genre} taste."
-    if likes:
+        base = f"{prefix}{explanation.title} fits your {genre} taste."
+    elif likes:
         like = likes[0]
-        return (
+        base = (
             f"You rated {like.title} {like.rating}/5 — "
             f"{explanation.title} sits in your wider taste."
         )
-    if explanation.rating_count:
-        return f"{explanation.title} is popular: {explanation.rating_count} ratings."
-    return f"{explanation.title}."
+    elif explanation.rating_count:
+        base = f"{explanation.title} is popular: {explanation.rating_count} ratings."
+    else:
+        base = f"{explanation.title}."
+    if explanation.contrast:
+        base += f" {explanation.contrast.reason}"
+    return base
 
 
 def explain_recommendation(
@@ -170,6 +237,7 @@ def explain_recommendation(
     item_id: int,
     *,
     k: int = 3,
+    recommended_ids: set[int] | None = None,
 ) -> Explanation:
     """Deterministic, verifiable evidence for recommending ``item_id`` to ``user_id``."""
     info = deps.item_info(item_id)
@@ -205,6 +273,19 @@ def explain_recommendation(
         basis = _COLD_START
 
     score = _engine_score(deps, user_id, item_id)
+    # contrastive comparison: why this item over the best alternative?
+    contrast = None
+    if recommended_ids:
+        # find the alternative's engine score from the CF candidates
+        alt_score = None
+        for entry in deps.recommend(user_id, n=50).items:
+            if entry.item_id != item_id:
+                alt_score = float(entry.score or 0.0)
+                break
+        contrast = _find_contrast(
+            deps, user_id, item_id, recommended_ids, score_a=score, score_b=alt_score
+        )
+
     explanation = Explanation(
         item_id=item_id,
         title=info.title,
@@ -219,6 +300,7 @@ def explain_recommendation(
         avg_rating=info.avg_rating,
         rating_count=info.rating_count,
         basis=basis,
+        contrast=contrast,
     )
     explanation.snippet = _snippet(explanation)
     return explanation
@@ -255,6 +337,12 @@ def _evidence_block(explanation: Explanation) -> str:
     if explanation.rating_count:
         lines.append(
             f"catalog: rated {explanation.rating_count}x, avg {explanation.avg_rating}/5"
+        )
+    if explanation.contrast:
+        c = explanation.contrast
+        lines.append(
+            f"contrastive: preferred over {c.alt_title} ({', '.join(c.alt_genres) or '-'}), "
+            f"{c.reason}"
         )
     return "\n".join(lines)
 
