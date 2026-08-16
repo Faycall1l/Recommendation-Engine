@@ -209,8 +209,11 @@ def _clean_items(
     *,
     plan: dict[str, Any],
     meta: dict[int, set[str]],
+    diversity: bool = True,
+    lambda_param: float = 0.5,
 ) -> list[RankedItem]:
-    """Drop hallucinations, constraint violations, and duplicates; cap at k."""
+    """Drop hallucinations, constraint violations, and duplicates; optionally
+    apply MMR re-ranking for genre diversity; cap at k."""
     seen: set[int] = set()
     kept: list[RankedItem] = []
     genre = plan.get("genre")
@@ -222,7 +225,59 @@ def _clean_items(
             continue
         seen.add(item.item_id)
         kept.append(item)
+    if diversity and len(kept) > 1:
+        kept = mmr_rerank(kept, meta, lambda_param=lambda_param)
     return kept[: plan["k"]]
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    """Jaccard similarity between two genre sets."""
+    if not a and not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def mmr_rerank(
+    items: list[RankedItem],
+    meta: dict[int, set[str]],
+    *,
+    lambda_param: float = 0.5,
+) -> list[RankedItem]:
+    """Maximal Marginal Relevance re-ranking for genre diversity.
+
+    The first item (LLM's top pick) is always selected. Each subsequent item
+    balances relevance (original rank position) against diversity (dissimilarity
+    from already-selected items), using Jaccard similarity on genre sets.
+
+    ``lambda_param`` controls the tradeoff: 1.0 = pure relevance (no diversity
+    benefit), 0.0 = pure diversity (ignores rank order).
+    """
+    if len(items) <= 1:
+        return items
+    n = len(items)
+    # relevance: inverse of position (first item = 1.0, last = 1/n)
+    relevance = [1.0 - i / n for i in range(n)]
+    genre_sets = [meta.get(it.item_id, set()) for it in items]
+
+    selected_idx: list[int] = [0]
+    remaining = set(range(1, n))
+
+    while remaining and len(selected_idx) < n:
+        best_score = -1.0
+        best_j = -1
+        for j in remaining:
+            # max similarity to any already-selected item
+            max_sim = max(
+                _jaccard(genre_sets[j], genre_sets[s]) for s in selected_idx
+            )
+            score = lambda_param * relevance[j] - (1 - lambda_param) * max_sim
+            if score > best_score:
+                best_score = score
+                best_j = j
+        selected_idx.append(best_j)
+        remaining.discard(best_j)
+
+    return [items[i] for i in selected_idx]
 
 
 def _reflect_on_ranking(

@@ -5,10 +5,12 @@ from recagent.agent import (
     RankedItems,
     RecAgent,
     _clean_items,
+    _jaccard,
     _reflect_on_ranking,
     build_evidence,
     build_plan,
     detect_genre,
+    mmr_rerank,
     usage_summary,
 )
 from recagent.config import LLMConfig
@@ -197,3 +199,99 @@ def test_reflect_single_item_no_diversity_flag():
     items = [RankedItem(item_id=1, reason="only one")]
     report = _reflect_on_ranking(items, plan=plan, meta=meta, evidence_sections=sections)
     assert report.needs_refinement is False
+
+
+# ---------- MMR diversity tests ----------
+
+
+def test_jaccard_basic():
+    assert _jaccard({"a", "b"}, {"a", "b"}) == 1.0
+    assert _jaccard({"a"}, {"b"}) == 0.0
+    assert _jaccard({"a", "b"}, {"b", "c"}) == 1 / 3
+    assert _jaccard(set(), set()) == 0.0
+
+
+def test_mmr_preserves_single_item():
+    items = [RankedItem(item_id=1, reason="solo")]
+    assert mmr_rerank(items, {1: {"Drama"}}) == items
+
+
+def test_mmr_preserves_order_with_identical_genres():
+    items = [
+        RankedItem(item_id=1, reason="a"),
+        RankedItem(item_id=2, reason="b"),
+        RankedItem(item_id=3, reason="c"),
+    ]
+    meta = {1: {"Sci-Fi"}, 2: {"Sci-Fi"}, 3: {"Sci-Fi"}}
+    reranked = mmr_rerank(items, meta)
+    # all identical genres -> max_sim always 1.0 -> score = λ*relevance - (1-λ)*1.0
+    # which is monotonically decreasing with relevance, so order preserved
+    assert [it.item_id for it in reranked] == [1, 2, 3]
+
+
+def test_mmr_promotes_diverse_items():
+    # item 1: Sci-Fi, item 2: Sci-Fi (duplicate genre), item 3: Comedy (diverse)
+    items = [
+        RankedItem(item_id=1, reason="a"),
+        RankedItem(item_id=2, reason="b"),
+        RankedItem(item_id=3, reason="c"),
+    ]
+    meta = {1: {"Sci-Fi"}, 2: {"Sci-Fi"}, 3: {"Comedy"}}
+    reranked = mmr_rerank(items, meta, lambda_param=0.5)
+    ids = [it.item_id for it in reranked]
+    # item 3 (Comedy) should be selected before item 2 (Sci-Fi) for diversity
+    assert ids.index(3) < ids.index(2)
+
+
+def test_mmr_lambda_zero_is_pure_diversity():
+    items = [
+        RankedItem(item_id=1, reason="a"),
+        RankedItem(item_id=2, reason="b"),
+        RankedItem(item_id=3, reason="c"),
+    ]
+    meta = {1: {"Sci-Fi"}, 2: {"Sci-Fi"}, 3: {"Comedy"}}
+    reranked = mmr_rerank(items, meta, lambda_param=0.0)
+    ids = [it.item_id for it in reranked]
+    # with λ=0, diversity dominates: first item always selected,
+    # then the most dissimilar item is picked next
+    assert ids[0] == 1  # always first
+    assert ids[1] == 3  # Comedy is most dissimilar to Sci-Fi
+
+
+def test_mmr_lambda_one_is_pure_relevance():
+    items = [
+        RankedItem(item_id=1, reason="a"),
+        RankedItem(item_id=2, reason="b"),
+        RankedItem(item_id=3, reason="c"),
+    ]
+    meta = {1: {"Sci-Fi"}, 2: {"Comedy"}, 3: {"Drama"}}
+    reranked = mmr_rerank(items, meta, lambda_param=1.0)
+    ids = [it.item_id for it in reranked]
+    # with λ=1, pure relevance: order unchanged regardless of genre diversity
+    assert ids == [1, 2, 3]
+
+
+def test_clean_items_diversity_false_skips_mmr():
+    plan = {"user_id": 1, "k": 5, "genre": None}
+    meta = {1: {"Sci-Fi"}, 2: {"Sci-Fi"}, 3: {"Comedy"}}
+    items = [
+        RankedItem(item_id=1, reason="a"),
+        RankedItem(item_id=2, reason="b"),
+        RankedItem(item_id=3, reason="c"),
+    ]
+    kept = _clean_items(items, plan=plan, meta=meta, diversity=False)
+    assert [it.item_id for it in kept] == [1, 2, 3]
+
+
+def test_clean_items_diversity_reorders():
+    plan = {"user_id": 1, "k": 5, "genre": None}
+    meta = {1: {"Sci-Fi"}, 2: {"Sci-Fi"}, 3: {"Comedy"}}
+    items = [
+        RankedItem(item_id=1, reason="a"),
+        RankedItem(item_id=2, reason="b"),
+        RankedItem(item_id=3, reason="c"),
+    ]
+    kept = _clean_items(items, plan=plan, meta=meta, diversity=True)
+    ids = [it.item_id for it in kept]
+    # diverse item (Comedy) should be promoted ahead of duplicate genre
+    assert ids.index(3) < ids.index(2)
