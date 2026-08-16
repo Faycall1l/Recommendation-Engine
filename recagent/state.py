@@ -6,6 +6,31 @@ import pickle
 from pathlib import Path
 
 
+class RestrictedUnpickler(pickle.Unpickler):
+    """Unpickler that only allows safe builtins + numpy/scipy types.
+
+    Blocks arbitrary code execution via crafted pickle payloads.
+    """
+
+    _ALLOWED_MODULES = frozenset({"numpy", "scipy"})
+
+    def find_class(self, module: str, name: str) -> type:
+        for prefix in self._ALLOWED_MODULES:
+            if module.startswith(prefix):
+                import importlib
+
+                mod = importlib.import_module(module)
+                obj = getattr(mod, name, None)
+                if obj is not None:
+                    return obj
+                raise pickle.UnpicklingError(
+                    f"{module}.{name} not in whitelist"
+                )
+        raise pickle.UnpicklingError(
+            f"class {module}.{name} is not allowed by RestrictedUnpickler"
+        )
+
+
 def save_state(state: dict, artifacts_dir: str | Path = "artifacts") -> None:
     artifacts_dir = Path(artifacts_dir)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -22,7 +47,7 @@ def load_state(artifacts_dir: str | Path = "artifacts") -> dict:
 
     artifacts_dir = Path(artifacts_dir)
     with open(artifacts_dir / "state.pkl", "rb") as f:
-        state = pickle.load(f)
+        state = RestrictedUnpickler(f).load()
     model_path = artifacts_dir / "model.npz"
     kind = state.get("cf_kind", "als")
     if kind == "als":
