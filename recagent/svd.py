@@ -113,6 +113,20 @@ class BiasedMF:
             + self.user_factors[user_idx] @ self.item_factors.T
         )
 
+    def score_all(self) -> np.ndarray:
+        """Dense (n_users x n_items) predicted ratings for every user.
+
+        Matches per-user ``predict``/``recommend`` scoring in one batched op.
+        Dense output is O(n_users x n_items); at large scale prefer per-user
+        ``recommend``.
+        """
+        return (
+            self.mu
+            + self.user_bias[:, np.newaxis]
+            + self.item_bias[np.newaxis, :]
+            + self.user_factors @ self.item_factors.T
+        )
+
     def recommend(self, matrix: sp.csr_matrix, user_idx: int, n: int = 10) -> list[tuple[int, float]]:
         scores = self._scores(user_idx)
         rated = set(matrix.indices[matrix.indptr[user_idx] : matrix.indptr[user_idx + 1]])

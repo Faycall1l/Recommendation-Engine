@@ -66,3 +66,15 @@ def test_als_roundtrip_save_load(tmp_path):
     np.testing.assert_allclose(restored.user_factors, original.user_factors)
     np.testing.assert_allclose(restored.item_factors, original.item_factors)
     assert restored.recommend(matrix, 0, n=2) == original.recommend(matrix, 0, n=2)
+
+
+def test_als_score_all_matches_per_user():
+    matrix = _low_rank_matrix()
+    mf = ExplicitALS(factors=4, iterations=10, seed=7).fit(matrix)
+    all_scores = mf.score_all()
+    n_users, n_items = matrix.shape
+    assert all_scores.shape == (n_users, n_items)
+    for u in range(n_users):
+        np.testing.assert_allclose(
+            all_scores[u], mf.user_factors[u] @ mf.item_factors.T
+        )

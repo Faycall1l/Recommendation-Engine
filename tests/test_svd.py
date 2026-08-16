@@ -72,3 +72,13 @@ def test_biased_mf_roundtrip_save_load(tmp_path):
     np.testing.assert_allclose(restored.user_factors, original.user_factors)
     np.testing.assert_allclose(restored.item_bias, original.item_bias)
     assert restored.recommend(matrix, 0, n=2) == original.recommend(matrix, 0, n=2)
+
+
+def test_biased_mf_score_all_matches_per_user():
+    matrix = _low_rank_matrix()
+    mf = BiasedMF(factors=4, iterations=10, seed=7).fit(matrix)
+    all_scores = mf.score_all()
+    n_users, n_items = matrix.shape
+    assert all_scores.shape == (n_users, n_items)
+    for u in range(n_users):
+        np.testing.assert_allclose(all_scores[u], mf._scores(u))
