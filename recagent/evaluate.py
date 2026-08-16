@@ -259,7 +259,8 @@ def paired_bootstrap(
     """Paired bootstrap on the mean difference ``a - b``.
 
     Resamples user indices with replacement; reports the CI of the mean
-    difference and a two-sided p-value for diff == 0 under the shifted null.
+    difference, a two-sided p-value for diff == 0 under the shifted null,
+    and Cohen's d effect size ( pooled-SD normalised mean difference ).
     """
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
@@ -269,9 +270,14 @@ def paired_bootstrap(
         raise ValueError("need at least one pair of scores")
     rng = np.random.default_rng(seed)
     n = len(a)
+    diff = a - b
+    mean_diff = float(diff.mean())
+    # pooled standard deviation for Cohen's d
+    pooled_std = float(np.sqrt((a.var() + b.var()) / 2.0))
+    cohens_d = mean_diff / pooled_std if pooled_std > 0 else 0.0
+    # vectorised bootstrap: generate all resampled means at once
     indices = rng.integers(0, n, size=(n_boot, n))
-    boot = (a[indices] - b[indices]).mean(axis=1)
-    mean_diff = float(a.mean() - b.mean())
+    boot = (diff[indices]).mean(axis=1)
     lo = (1.0 - ci) / 2.0
     ci_lo, ci_hi = float(np.quantile(boot, lo)), float(np.quantile(boot, 1.0 - lo))
     centered = boot - mean_diff
@@ -283,6 +289,7 @@ def paired_bootstrap(
         "ci_level": ci,
         "n_boot": n_boot,
         "p_value": round(p_value, 4),
+        "cohens_d": round(cohens_d, 4),
         "n": n,
     }
 

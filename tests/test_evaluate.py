@@ -282,6 +282,22 @@ def test_paired_bootstrap_validates_input():
         paired_bootstrap([], [])
 
 
+def test_paired_bootstrap_cohens_d():
+    rng = np.random.default_rng(42)
+    a = rng.normal(1.0, 1.0, size=40)
+    b = rng.normal(0.0, 1.0, size=40)
+    out = paired_bootstrap(a, b, n_boot=100, seed=1)
+    # Cohen's d is mean_diff / pooled_std, should be positive since a > b
+    assert out["cohens_d"] > 0
+
+
+def test_paired_bootstrap_cohens_d_zero_when_identical():
+    rng = np.random.default_rng(0)
+    x = rng.uniform(size=50)
+    out = paired_bootstrap(x, x, n_boot=100, seed=1)
+    assert out["cohens_d"] == 0.0
+
+
 def test_genre_precision_is_case_insensitive():
     share = {"Film-Noir": 1.0, "Sci-Fi": 0.5}
     assert genre_precision(share, "film-noir") == 1.0
