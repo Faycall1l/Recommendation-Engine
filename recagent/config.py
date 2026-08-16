@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 _BASE_URL_DEFAULT = "http://localhost:8000/v1"
 _MODEL_DEFAULT = "Gemma-4-31B-it"
@@ -31,6 +31,19 @@ class LLMConfig(BaseModel):
         if not v or not v.strip():
             raise ValueError("model must be a non-empty string")
         return v
+
+
+class RecAgentConfig(BaseModel):
+    """Agent behaviour tuning — controls the plan-reflect-diversify pipeline."""
+
+    temperature: float = Field(default=0.1, ge=0.0, le=2.0)
+    max_requests: int = Field(default=12, ge=1, le=100)
+    reflect: bool = True
+    diversity: bool = True
+    lambda_param: float = Field(default=0.5, ge=0.0, le=1.0,
+                                description="MMR relevance/diversity tradeoff: 1.0=pure relevance, 0.0=pure diversity")
+    evidence_budget_tokens: int = Field(default=4000, ge=256, le=32000,
+                                        description="Max characters for the evidence block sent to the LLM")
 
 
 def load_llm_config() -> LLMConfig:
