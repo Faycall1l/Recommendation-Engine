@@ -49,6 +49,8 @@ class UserStats(BaseModel):
 class ToolRegistry:
     """Binds the tools to a trained model state; pydantic-ai injects this as deps."""
 
+    MAX_N = 1000
+
     def __init__(self, state: dict[str, Any]):
         self.state = state
         self.model = state["model"]
@@ -58,6 +60,31 @@ class ToolRegistry:
         self.user_ids = state["user_ids"]
         self.item_ids = state["item_ids"]
         self.items_meta = state["items_meta"]
+
+    # -- validation helpers ---------------------------------------------------
+
+    def _validate_user_id(self, user_id: int) -> int:
+        if not isinstance(user_id, int):
+            raise TypeError(f"user_id must be int, got {type(user_id).__name__}")
+        if user_id not in self.uid_to_idx:
+            raise KeyError(f"user_id {user_id} not in catalog")
+        return user_id
+
+    def _validate_item_id(self, item_id: int) -> int:
+        if not isinstance(item_id, int):
+            raise TypeError(f"item_id must be int, got {type(item_id).__name__}")
+        if item_id not in self.iid_to_idx:
+            raise KeyError(f"item_id {item_id} not in catalog")
+        return item_id
+
+    def _validate_n(self, n: int, label: str = "n") -> int:
+        if not isinstance(n, int):
+            raise TypeError(f"{label} must be int, got {type(n).__name__}")
+        if n < 1:
+            raise ValueError(f"{label} must be >= 1, got {n}")
+        if n > self.MAX_N:
+            raise ValueError(f"{label} must be <= {self.MAX_N}, got {n}")
+        return n
 
     @classmethod
     def from_artifacts(cls, artifacts_dir: str = "artifacts") -> ToolRegistry:
@@ -82,6 +109,8 @@ class ToolRegistry:
 
         Already-seen items are excluded by the engine.
         """
+        self._validate_user_id(user_id)
+        self._validate_n(n)
         user_idx = self.uid_to_idx[user_id]
         items = [
             self._item_meta(self.item_ids[item_idx]).model_copy(
@@ -93,6 +122,8 @@ class ToolRegistry:
 
     def user_profile(self, user_id: int, k: int = 8) -> ItemList:
         """The user's highest-rated items — their taste profile."""
+        self._validate_user_id(user_id)
+        self._validate_n(k, "k")
         user_idx = self.uid_to_idx[user_id]
         row = self.matrix.getrow(user_idx)
         order = row.data.argsort()[::-1][:k]
@@ -109,6 +140,7 @@ class ToolRegistry:
 
     def user_stats(self, user_id: int) -> UserStats:
         """How many movies the user rated and their average rating (1-5 scale)."""
+        self._validate_user_id(user_id)
         user_idx = self.uid_to_idx[user_id]
         row = self.matrix.getrow(user_idx)
         n = int(row.nnz)
@@ -117,10 +149,14 @@ class ToolRegistry:
 
     def item_info(self, item_id: int) -> ItemEntry:
         """Metadata for a single item: title, genres, popularity."""
+        self._validate_item_id(item_id)
         return self._item_meta(item_id)
 
     def search_items(self, query: str, n: int = 10) -> ItemList:
         """Items whose title or genres match a free-text query."""
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError("query must be a non-empty string")
+        self._validate_n(n)
         tokens = {t for t in query.lower().split() if t}
         scored: list[tuple[int, int, int]] = []
         for item_id, idx in self.iid_to_idx.items():
@@ -141,6 +177,8 @@ class ToolRegistry:
         Used to widen a thin candidate pool: neighbours of a genre hit are usually
         more of the same genre, so this chains recall beyond the top-K.
         """
+        self._validate_item_id(item_id)
+        self._validate_n(n)
         item_idx = self.iid_to_idx[item_id]
         out: list[ItemEntry] = []
         for candidate, score in self.model.similar_items(item_idx, n=n + 1):
@@ -157,6 +195,8 @@ class ToolRegistry:
 
     def similar_users(self, user_id: int, n: int = 10) -> UserList:
         """Nearest neighbours of a user in factor space — social-proof evidence."""
+        self._validate_user_id(user_id)
+        self._validate_n(n)
         user_idx = self.uid_to_idx[user_id]
         users: list[UserEntry] = []
         for candidate, score in self.model.similar_users(user_idx, n=n + 1):
@@ -174,6 +214,9 @@ class ToolRegistry:
         n: int = 10,
     ) -> ItemList:
         """Structured attribute filter over the catalog, quality-first ordering."""
+        self._validate_n(n)
+        if min_rating is not None and not 0.0 <= min_rating <= 5.0:
+            raise ValueError(f"min_rating must be in [0, 5], got {min_rating}")
         wanted = {g.lower() for g in (genres or [])}
         scored: list[tuple[float, int, ItemEntry]] = []
         for item_id in self.iid_to_idx:
@@ -188,6 +231,7 @@ class ToolRegistry:
 
     def trending(self, n: int = 10) -> ItemList:
         """Most-watched items across all users — the cold-start popularity prior."""
+        self._validate_n(n)
         csc = self.matrix.tocsc()
         counts = np.diff(csc.indptr)
         top = counts.argsort()[::-1][:n]
