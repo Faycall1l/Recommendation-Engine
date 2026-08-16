@@ -48,6 +48,31 @@ class ReflectionReport:
     needs_refinement: bool
 
 
+@dataclasses.dataclass(slots=True)
+class ReasoningTrace:
+    """Machine-readable audit log of one agent pipeline execution.
+
+    Captures every stage so production debugging is possible without
+    replaying the entire request. Returned by ``RecAgent.arun()`` as the
+    ``.trace`` attribute on the result.
+    """
+
+    request_id: str = ""
+    plan_user_id: int | None = None
+    plan_k: int = 5
+    plan_constraint: str | None = None
+    evidence_text: str = ""
+    evidence_sections: list[str] = dataclasses.field(default_factory=list)
+    evidence_meta: dict[str, object] = dataclasses.field(default_factory=dict)
+    raw_llm_output: str = ""
+    reflection_issues: list[str] = dataclasses.field(default_factory=list)
+    refinement_applied: bool = False
+    cleaned_item_ids: list[int] = dataclasses.field(default_factory=list)
+    diversity_applied: bool = False
+    latency_ms: float = 0.0
+    usage: dict[str, object] = dataclasses.field(default_factory=dict)
+
+
 SYSTEM_PROMPT = """\
 You are RecAgent, a recommender agent. You produce ranked item lists grounded in
 an evidence block: a user profile, collaborative-filtering candidates, and
