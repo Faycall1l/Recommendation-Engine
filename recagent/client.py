@@ -189,7 +189,7 @@ class RecClient:
             scores=self._cf_scores(user_id),
         )
 
-    def _run_with_retry(self, request: str) -> Any:
+    def _run_with_retry(self, request: str, *, request_id: str = "") -> Any:
         """Run the agent with exponential backoff retry + circuit breaker."""
         import random
 
@@ -216,7 +216,7 @@ class RecClient:
                     time.sleep(delay)
         raise last_exc  # type: ignore[misc]
 
-    async def _arun_with_retry(self, request: str) -> Any:
+    async def _arun_with_retry(self, request: str, *, request_id: str = "") -> Any:
         """Async run the agent with exponential backoff retry + circuit breaker."""
         import random
 
@@ -225,7 +225,7 @@ class RecClient:
         last_exc: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
-                result = await self.agent.arun(request, self.deps)
+                result = await self.agent.arun(request, self.deps, request_id=request_id)
                 self._breaker.record_success()
                 return result
             except Exception as exc:  # noqa: BLE001 — retry all transient LLM failures
@@ -246,11 +246,13 @@ class RecClient:
     # -- public API ----------------------------------------------------------
 
     def recommend(
-        self, user_id: int, k: int = 5, filters: dict[str, Any] | None = None
+        self, user_id: int, k: int = 5, filters: dict[str, Any] | None = None,
+        *, request_id: str | None = None,
     ) -> RecommendResponse:
         """Recommend ``k`` items for a user.
 
         ``filters`` supports structured constraints, e.g. ``{"genre": "Sci-Fi"}``.
+        ``request_id`` is threaded through to the agent trace for correlation.
         """
         request = self._filters_request(user_id, k, filters)
         if self.agent is None:
@@ -277,7 +279,7 @@ class RecClient:
                     for e in self.deps.recommend(user_id, n=k).items
                 ]
             return RecommendResponse(user_id=user_id, k=k, items=items)
-        result = self._run_with_retry(request)
+        result = self._run_with_retry(request, request_id=request_id)
         return RecommendResponse(
             user_id=user_id,
             k=k,
@@ -286,12 +288,13 @@ class RecClient:
         )
 
     async def arecommend(
-        self, user_id: int, k: int = 5, filters: dict[str, Any] | None = None
+        self, user_id: int, k: int = 5, filters: dict[str, Any] | None = None,
+        *, request_id: str | None = None,
     ) -> RecommendResponse:
         request = self._filters_request(user_id, k, filters)
         if self.agent is None:
             return await asyncio.to_thread(self.recommend, user_id, k, filters)
-        result = await self._arun_with_retry(request)
+        result = await self._arun_with_retry(request, request_id=request_id)
         return RecommendResponse(
             user_id=user_id,
             k=k,
