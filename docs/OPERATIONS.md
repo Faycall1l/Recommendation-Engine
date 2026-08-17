@@ -148,12 +148,24 @@ of waiting for timeouts.
 
 | path | purpose |
 |---|---|
-| `recagent/` | package: engines, agent, explain, client, api, cli, evaluate, data, config, model |
+| `recagent/` | package: engines, agent, explain, client, api, cli, evaluate, data, config, model, utils, state |
 | `recagent_sdk/` | typed REST client (sync + async) |
 | `results/*.json` | machine-readable eval output (single source of truth) |
 | `docs/` | FINDINGS (numbers), DESIGN (why), TESTING (coverage), this runbook |
 | `assets/recagent-logo.svg` | mascot logo |
 | `data/`, `artifacts*/`, `.env` | gitignored; fetched/trained, never committed |
+
+## Production flags
+
+| env var / param | default | what it does |
+|---|---|---|
+| `--reflect` | `True` | enables reflection + refinement loop |
+| `--evidence-budget-tokens` | `4000` | caps evidence text at `budget*4` chars |
+| `--lambda-param` | `0.5` | MMR diversity/relevance tradeoff (1.0=pure relevance) |
+| `--max-retries` | `3` | exponential backoff retries on transient errors |
+| `--retry-base-delay` | `1.0` | base delay in seconds before first retry |
+| `request_id` | `None` | correlation ID threaded through to ReasoningTrace |
+| `recommended_ids` | `None` | enables contrastive explanations |
 
 ## House rules
 
