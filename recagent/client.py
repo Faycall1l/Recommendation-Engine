@@ -43,6 +43,8 @@ class RecommendResponse(BaseModel):
     k: int
     items: list[Recommendation]
     usage: dict[str, int] = Field(default_factory=dict)
+    latency_ms: float | None = None
+    reflection_applied: bool | None = None
 
 
 class ChatResponse(BaseModel):
@@ -280,12 +282,20 @@ class RecClient:
                 ]
             return RecommendResponse(user_id=user_id, k=k, items=items)
         result = self._run_with_retry(request, request_id=request_id)
-        return RecommendResponse(
+        trace = getattr(result, "trace", None)
+        resp = RecommendResponse(
             user_id=user_id,
             k=k,
             items=self._from_agent(result, user_id),
             usage=usage_summary(result),
+            latency_ms=trace.latency_ms if trace else None,
+            reflection_applied=trace.refinement_applied if trace else None,
         )
+        logger.info(
+            "recommend user_id=%d k=%d items=%d latency_ms=%.1f reflection=%s",
+            user_id, k, len(resp.items), resp.latency_ms or 0, resp.reflection_applied,
+        )
+        return resp
 
     async def arecommend(
         self, user_id: int, k: int = 5, filters: dict[str, Any] | None = None,
@@ -295,11 +305,14 @@ class RecClient:
         if self.agent is None:
             return await asyncio.to_thread(self.recommend, user_id, k, filters)
         result = await self._arun_with_retry(request, request_id=request_id)
+        trace = getattr(result, "trace", None)
         return RecommendResponse(
             user_id=user_id,
             k=k,
             items=self._from_agent(result, user_id),
             usage=usage_summary(result),
+            latency_ms=trace.latency_ms if trace else None,
+            reflection_applied=trace.refinement_applied if trace else None,
         )
 
     def chat(
