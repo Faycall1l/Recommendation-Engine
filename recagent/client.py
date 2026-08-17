@@ -38,6 +38,7 @@ class Recommendation(BaseModel):
     genres: list[str] = Field(default_factory=list)
     score: float | None = None
     reason: str = ""
+    tags: list[str] = Field(default_factory=list)
 
 
 class RecommendResponse(BaseModel):
@@ -134,6 +135,7 @@ def _to_recommendations(
                 genres=info.get("genres", []),
                 score=(scores or {}).get(item.item_id),
                 reason=item.reason,
+                tags=getattr(item, "tags", []),
             )
         )
     return out

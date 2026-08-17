@@ -35,6 +35,10 @@ from recagent.utils import usage_summary
 class RankedItem(BaseModel):
     item_id: int = Field(description="item id from the catalog")
     reason: str = Field(description="one-sentence justification grounded in evidence")
+    tags: list[str] = Field(
+        default_factory=list,
+        description="optional tags: comfort, discovery, rewatch, mood-light, mood-dark, context-late-night, etc.",
+    )
 
 
 class RankedItems(BaseModel):
