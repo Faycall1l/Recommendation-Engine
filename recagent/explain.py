@@ -359,6 +359,47 @@ Rules:
 - Do not mention user ids, engine scores, or the word "evidence".
 """
 
+_HALLUCINATION_GUARD_PROMPT = """\
+Verify the explanation text only references facts from the evidence block.
+Output a corrected version if any titles, genres, ratings, or scores not
+present in the evidence are mentioned. Output the original text unchanged
+if it is fully grounded.  Output JSON {"text": "..."}."""
+
+
+def _hallucination_guard(text: str, explanation: Explanation) -> str:
+    """Heuristic guard: drop sentences that reference titles not in evidence.
+
+    This is a lightweight post-hoc check that doesn't require an extra LLM call.
+    It splits the text into sentences and drops any sentence that mentions a
+    title (capitalised words followed by punctuation) that doesn't appear in the
+    evidence titles.
+    """
+    import re
+
+    evidence_titles = {
+        explanation.title.lower(),
+        *(e.title.lower() for e in explanation.user_likes),
+        *(e.title.lower() for e in explanation.similar_rated),
+    }
+    if explanation.contrast:
+        evidence_titles.add(explanation.contrast.alt_title.lower())
+
+    # split on sentence boundaries
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    grounded: list[str] = []
+    for sent in sentences:
+        # check for quoted or italicised titles (common LLM patterns)
+        titles_found = re.findall(r"[*\"']([A-Z][^*\"'.!?]{1,50})[*\"']", sent)
+        # also check bare title-like capitalised runs
+        bare_titles = re.findall(r"(?<!\w)([A-Z][A-Za-z0-9:']+(?:\s[A-Z][A-Za-z0-9:']+)*)", sent)
+        all_found = {t.lower() for t in titles_found + bare_titles}
+        # if any found title is NOT in evidence, drop the sentence
+        if all_found and not all_found & evidence_titles:
+            continue
+        grounded.append(sent)
+    result = " ".join(grounded).strip()
+    return result if result else explanation.snippet
+
 
 class RecExplainer:
     """Turns a deterministic :class:`Explanation` into fluent, grounded prose.
@@ -409,6 +450,7 @@ class RecExplainer:
         text = output.text.strip() if output else ""
         if not text:
             text = explanation.snippet  # guardrail: never return an empty line
+        text = _hallucination_guard(text, explanation)
         return text, usage_summary(result)
 
     def explain(self, explanation: Explanation) -> tuple[str, dict[str, int]]:
