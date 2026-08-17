@@ -486,5 +486,16 @@ class RecAgent:
         return out
 
     def run(self, request: str, deps: ToolRegistry) -> Any:
-        """Sync convenience wrapper for the CLI."""
-        return asyncio.run(self.arun(request, deps))
+        """Sync convenience wrapper for the CLI.
+
+        Handles the case where an event loop is already running (e.g. Jupyter,
+        asyncio nested calls) by delegating to a thread.
+        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self.arun(request, deps))
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, self.arun(request, deps)).result()
