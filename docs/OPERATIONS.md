@@ -149,11 +149,14 @@ of waiting for timeouts.
 | path | purpose |
 |---|---|
 | `recagent/` | package: engines, agent, explain, client, api, cli, evaluate, data, config, model, utils, state |
+| `recagent/memory.py` | UserMemory: persistent preference buckets (JSON-backed) |
+| `recagent/session.py` | SessionMemory: in-conversation context tracking |
 | `recagent_sdk/` | typed REST client (sync + async) |
 | `results/*.json` | machine-readable eval output (single source of truth) |
 | `docs/` | FINDINGS (numbers), DESIGN (why), TESTING (coverage), this runbook |
 | `assets/recagent-logo.svg` | mascot logo |
 | `data/`, `artifacts*/`, `.env` | gitignored; fetched/trained, never committed |
+| `artifacts/memory.json` | user preference storage (auto-created) |
 
 ## Production flags
 
@@ -166,6 +169,37 @@ of waiting for timeouts.
 | `--retry-base-delay` | `1.0` | base delay in seconds before first retry |
 | `request_id` | `None` | correlation ID threaded through to ReasoningTrace |
 | `recommended_ids` | `None` | enables contrastive explanations |
+| `feedback_path` | `None` | path to feedback JSONL; auto-ingested into memory on init |
+
+## Memory and session
+
+User preferences are stored in `artifacts/memory.json` (auto-created). The
+agent sees preference history and current session context in the evidence block
+on every call.
+
+### REST endpoints
+
+```
+POST /save_preference       {"user_id": 196, "category": "loved", "item_ids": [64, 12]}
+POST /get_preferences       {"user_id": 196, "category": "loved"}
+POST /get_preference_summary {"user_id": 196}
+POST /ingest_feedback       {"feedback_path": "artifacts/feedback.jsonl"}
+POST /recommend             {"user_id": 196, "k": 5, "filters": {"mood": "light"}}
+```
+
+### SDK
+
+```python
+from recagent.client import RecClient
+
+client = RecClient()
+client.deps.save_preference(196, "loved", [64, 12], note="favourites")
+resp = client.recommend(196, k=5, filters={"mood": "light"})
+print(resp.items[0].tags)  # ["comfort", "mood-light"]
+
+# session tracks what was recommended
+print(client.session.session_summary())
+```
 
 ## House rules
 

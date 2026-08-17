@@ -588,3 +588,42 @@ and `ConstraintResult` added to `evaluate.py`.
 
 **Correlation ID** — `request_id` propagates through `recommend()` →
 `_run_with_retry()` → `agent.arun()` → `ReasoningTrace.request_id`.
+
+### 9.9 Agent memory, session, and enhanced reasoning (latest batch)
+
+**UserMemory** (`memory.py`) — persistent JSON-backed preference buckets per
+user. Categories: `loved`, `disliked`, `comfort`, `discovery`, `mood:<name>`,
+`context:<name>`, `genre:<name>`. Backed by `PreferenceEntry` (item_id,
+timestamp, source, note) and `PreferenceBucket`. Supports CRUD, dedup, bulk
+ingest from `feedback.jsonl`. Summary is injected into the evidence block so
+the agent reasons about past taste.
+
+**SessionMemory** (`session.py`) — in-conversation context tracking. Records
+what was recommended, liked, and disliked within a session. Prevents
+repetition across turns and enables follow-up requests. Not persisted to
+disk. Capped at `max_turns=20` with FIFO eviction.
+
+**Tags on RankedItem/Recommendation** — the LLM can tag items (`comfort`,
+`discovery`, `rewatch`, `mood-light`, `mood-dark`, `context-late-night`)
+via an optional `tags` field on `RankedItem`. Tags flow through
+`_to_recommendations` to the public `Recommendation` model.
+
+**Enhanced SYSTEM_PROMPT** — the agent now reasons holistically about users:
+leverages preference history, interprets mood/context requests ("something
+light", "late night watch"), handles discovery requests ("surprise me"),
+avoids items similar to disliked ones, and varies from recent
+recommendations.
+
+**Memory wired into build_evidence** — preference summary and session context
+appear in the evidence block alongside the user profile and CF candidates.
+The agent sees past preferences (loved/disliked counts and item IDs) and
+the current session's recommendation/feedback history.
+
+**RecClient session recording** — both `recommend()` and `arecommend()`
+record the request and returned item IDs to `SessionMemory` after each call,
+including the CF-only (non-agent) path.
+
+**dotenv auto-loading** — `load_llm_config()` calls `load_dotenv()` at module
+import, so `.env` files are loaded automatically without manual sourcing.
+
+244 tests pass, ruff clean.
