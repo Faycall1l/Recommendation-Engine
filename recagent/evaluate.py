@@ -642,3 +642,31 @@ def catalog_coverage(
     index = np.arange(1, n + 1)
     gini = float(1.0 - 2.0 * np.sum(sorted_counts * (n - index + 0.5)) / (n * sorted_counts.sum())) if sorted_counts.sum() > 0 else 0.0
     return {"coverage": cov, "gini": round(gini, 4)}
+
+
+def long_tail_share(
+    ranked_by_user: dict[int, list[int]],
+    state: dict,
+    k: int = 10,
+    head_fraction: float = 0.2,
+) -> float:
+    """Fraction of recommended items that are long-tail (not in the top ``head_fraction`` by popularity).
+
+    Uses rating count as the popularity measure. Items outside the top
+    ``head_fraction`` most-popular items are considered long-tail.
+    """
+    meta = state["items_meta"]
+    counts: dict[int, int] = {}
+    for item_ids_list in ranked_by_user.values():
+        for iid in item_ids_list[:k]:
+            counts[iid] = counts.get(iid, 0) + 1
+    if not counts:
+        return 0.0
+    all_items = sorted(
+        meta.keys(),
+        key=lambda iid: -meta.get(iid, {}).get("rating_count", 0),
+    )
+    n_head = max(1, int(len(all_items) * head_fraction))
+    head_ids = set(all_items[:n_head])
+    n_long_tail = sum(1 for iid in counts if iid not in head_ids)
+    return round(n_long_tail / len(counts), 4)
