@@ -82,7 +82,7 @@ def _print_result(result, deps, verbose: bool) -> None:
     for rank, item in enumerate(output.items, 1):
         title = titles.get(item.item_id, {}).get("title", f"<item {item.item_id}>")
         print(f"{rank:>2}. {title} — {item.reason}")
-    from recagent.agent import usage_summary
+    from recagent.utils import usage_summary
 
     print(f"usage: {usage_summary(result)}")
 

@@ -29,6 +29,7 @@ from pydantic_ai.settings import ModelSettings
 
 from recagent.config import LLMConfig
 from recagent.tools import ToolRegistry
+from recagent.utils import usage_summary
 
 
 class RankedItem(BaseModel):
@@ -487,16 +488,3 @@ class RecAgent:
     def run(self, request: str, deps: ToolRegistry) -> Any:
         """Sync convenience wrapper for the CLI."""
         return asyncio.run(self.arun(request, deps))
-
-
-def usage_summary(result: Any) -> dict:
-    usage = result.usage() if callable(getattr(result, "usage", None)) else result.usage
-    return {
-        "requests": getattr(usage, "requests", 0),
-        "prompt_tokens": getattr(
-            usage, "input_tokens", getattr(usage, "request_tokens", 0)
-        ),
-        "completion_tokens": getattr(
-            usage, "output_tokens", getattr(usage, "response_tokens", 0)
-        ),
-    }

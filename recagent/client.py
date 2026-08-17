@@ -21,11 +21,12 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from recagent.agent import RecAgent, build_evidence, build_plan, usage_summary
+from recagent.agent import RecAgent, build_evidence, build_plan
 from recagent.config import LLMConfig, load_llm_config
 from recagent.explain import Explanation, RecExplainer, explain_recommendation
 from recagent.state import load_state
 from recagent.tools import ToolRegistry
+from recagent.utils import usage_summary
 
 logger = logging.getLogger(__name__)
 

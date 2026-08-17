@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from recagent.config import LLMConfig
 from recagent.tools import ItemEntry, ToolRegistry
+from recagent.utils import usage_summary
 
 _COLD_START = "popularity"
 
@@ -458,14 +459,3 @@ class RecExplainer:
         import asyncio
 
         return asyncio.run(self.aexplain(explanation))
-
-
-def usage_summary(result: Any) -> dict[str, int]:
-    usage = result.usage() if callable(getattr(result, "usage", None)) else result.usage
-    return {
-        "requests": getattr(usage, "requests", 0),
-        "prompt_tokens": getattr(usage, "input_tokens", getattr(usage, "request_tokens", 0)),
-        "completion_tokens": getattr(
-            usage, "output_tokens", getattr(usage, "response_tokens", 0)
-        ),
-    }
