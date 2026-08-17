@@ -542,3 +542,49 @@ split is persisted as a JSON file keyed by a SHA-256 hash of the parameters
 (data_kind, seed, min_interactions, exclude_head). Subsequent calls with the
 same parameters load from cache, avoiding the expensive re-derivation. On
 ml-20m this reduces repeated eval build times from ~9 min to seconds.
+
+### 9.8 Production hardening (latest batch)
+
+**Pickle security** — `state.py` uses a `RestrictedUnpickler` that only allows
+numpy/scipy/builtins. Arbitrary code execution via pickle payloads is blocked.
+
+**Thread-safe circuit breaker** — `_CircuitBreaker` uses `threading.Lock` on all
+state mutations, making it safe for concurrent async/sync callers.
+
+**Input validation** — `ToolRegistry` validates `user_id` (positive int),
+`item_id` (positive int), and `n` (1–1000) on all 9 public methods.
+
+**Contrastive alt_score fix** — `_find_contrast` now receives a `cf_scores` dict
+and looks up the contrastive item's actual CF score, eliminating a bug where the
+first non-target item's score was used as a proxy.
+
+**LLMConfig as Pydantic BaseModel** — validates `base_url` (must start with
+http/https), `model` (non-empty), and `api_key` (required when `enabled=True`).
+
+**RecAgentConfig** — Pydantic model controlling `temperature`, `max_requests`,
+`reflect`, `diversity`, `lambda_param`, and `evidence_budget_tokens` with field
+constraints (e.g. `ge=0.0, le=2.0` for temperature).
+
+**ReasoningTrace** — dataclass capturing the full agent pipeline: plan, evidence,
+LLM output, reflection, cleaning, latency, and usage. Attached to every `arun()`
+result as `result.trace`.
+
+**Evidence budget** — `build_evidence()` gains `budget_tokens=4000` kwarg.
+Evidence text is truncated at `budget_tokens*4` chars to prevent context overflow.
+
+**Transient-only retry** — `_run_with_retry` / `_arun_with_retry` only catch
+`httpx.TransportError`, `ConnectionError`, `TimeoutError`, `OSError`. Permanent
+errors (auth, 4xx) raise immediately.
+
+**Hallucination guard** — `RecExplainer.aexplain()` post-filters LLM output,
+dropping sentences that reference titles not present in the evidence.
+
+**Beyond-accuracy metrics** — `intra_list_diversity`, `average_novelty`,
+`catalog_coverage`, `long_tail_share`, `serendipity`, `demographic_parity`,
+and `ConstraintResult` added to `evaluate.py`.
+
+**Structured logging** — `RecommendResponse` now carries `latency_ms` and
+`reflection_applied`; `recommend()` emits a structured info log line.
+
+**Correlation ID** — `request_id` propagates through `recommend()` →
+`_run_with_retry()` → `agent.arun()` → `ReasoningTrace.request_id`.
