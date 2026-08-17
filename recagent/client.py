@@ -192,8 +192,16 @@ class RecClient:
         )
 
     def _run_with_retry(self, request: str, *, request_id: str = "") -> Any:
-        """Run the agent with exponential backoff retry + circuit breaker."""
+        """Run the agent with exponential backoff retry + circuit breaker.
+
+        Only retries on transient errors (connection, timeout, transport).
+        Permanent errors (4xx, auth) are raised immediately.
+        """
         import random
+
+        import httpx
+
+        transient = (httpx.TransportError, ConnectionError, TimeoutError, OSError)
 
         if not self._breaker.allow_request():
             raise ConnectionError("circuit breaker open — LLM endpoint unreachable")
@@ -203,7 +211,7 @@ class RecClient:
                 result = self.agent.run(request, self.deps)
                 self._breaker.record_success()
                 return result
-            except Exception as exc:  # noqa: BLE001 — retry all transient LLM failures
+            except transient as exc:
                 last_exc = exc
                 self._breaker.record_failure()
                 if attempt < self.max_retries:
@@ -216,11 +224,20 @@ class RecClient:
                         exc,
                     )
                     time.sleep(delay)
+            except Exception:
+                raise
         raise last_exc  # type: ignore[misc]
 
     async def _arun_with_retry(self, request: str, *, request_id: str = "") -> Any:
-        """Async run the agent with exponential backoff retry + circuit breaker."""
+        """Async run the agent with exponential backoff retry + circuit breaker.
+
+        Only retries on transient errors (connection, timeout, transport).
+        """
         import random
+
+        import httpx
+
+        transient = (httpx.TransportError, ConnectionError, TimeoutError, OSError)
 
         if not self._breaker.allow_request():
             raise ConnectionError("circuit breaker open — LLM endpoint unreachable")
@@ -230,7 +247,7 @@ class RecClient:
                 result = await self.agent.arun(request, self.deps, request_id=request_id)
                 self._breaker.record_success()
                 return result
-            except Exception as exc:  # noqa: BLE001 — retry all transient LLM failures
+            except transient as exc:
                 last_exc = exc
                 self._breaker.record_failure()
                 if attempt < self.max_retries:
@@ -243,6 +260,8 @@ class RecClient:
                         exc,
                     )
                     await asyncio.sleep(delay)
+            except Exception:
+                raise
         raise last_exc  # type: ignore[misc]
 
     # -- public API ----------------------------------------------------------
