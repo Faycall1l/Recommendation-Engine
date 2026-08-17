@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from recagent.agent import RecAgent, build_evidence, build_plan
 from recagent.config import LLMConfig, load_llm_config
 from recagent.explain import Explanation, RecExplainer, explain_recommendation
+from recagent.memory import UserMemory
 from recagent.state import load_state
 from recagent.tools import ToolRegistry
 from recagent.utils import usage_summary
@@ -156,16 +157,19 @@ class RecClient:
         circuit_timeout: float = 30.0,
     ):
         self.state = state if state is not None else load_state(str(artifacts))
-        self.deps = ToolRegistry(self.state)
+        self.feedback_path = (
+            Path(feedback_path) if feedback_path else Path(str(artifacts)) / "feedback.jsonl"
+        )
+        self.memory = UserMemory(Path(str(artifacts)) / "memory.json")
+        self.deps = ToolRegistry(self.state, memory=self.memory)
+        # auto-ingest any existing feedback into memory buckets
+        self.memory.ingest_feedback(self.feedback_path)
         config = llm_config or load_llm_config()
         self.agent = agent if agent is not None else (RecAgent(config, self.state) if config.enabled else None)
         self.explainer = (
             explainer
             if explainer is not None
             else (RecExplainer(config) if config.enabled else None)
-        )
-        self.feedback_path = (
-            Path(feedback_path) if feedback_path else Path(str(artifacts)) / "feedback.jsonl"
         )
         self.max_retries = max_retries
         self.retry_base_delay = retry_base_delay

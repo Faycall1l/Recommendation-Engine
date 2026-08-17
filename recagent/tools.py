@@ -271,3 +271,13 @@ class ToolRegistry:
     def get_preference_summary(self, user_id: int) -> str:
         """Human-readable summary of user's preference buckets for evidence."""
         return self.memory.get_preference_summary(user_id)
+
+    def ingest_feedback(self, feedback_path: str) -> dict[str, Any]:
+        """Read a feedback JSONL file and populate loved/disliked buckets.
+
+        Call this once at startup or periodically to sync explicit feedback
+        into the memory system.  Items with liked=True go to 'loved';
+        liked=False go to 'disliked'.
+        """
+        added = self.memory.ingest_feedback(feedback_path)
+        return {"ingested": added}
