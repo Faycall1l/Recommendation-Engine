@@ -670,3 +670,44 @@ def long_tail_share(
     head_ids = set(all_items[:n_head])
     n_long_tail = sum(1 for iid in counts if iid not in head_ids)
     return round(n_long_tail / len(counts), 4)
+
+
+def serendipity(
+    ranked_by_user: dict[int, list[int]],
+    test_items: dict[int, int],
+    state: dict,
+    k: int = 10,
+) -> float:
+    """Average serendipity: items the user hadn't seen that are relevant but not obvious.
+
+    Serendipity(item, user) = relevance(item) * (1 − popularity(item)) if
+    the item was not in the user's profile, else 0. Returns the mean across
+    all top-k lists.
+    """
+    matrix = state["matrix"]
+    uid_to_idx = state["uid_to_idx"]
+    item_ids = state["item_ids"]
+    n_users = matrix.shape[0]
+    total_pop = np.array(matrix.getnnz(axis=0)).flatten()
+    popularities = total_pop / n_users
+    iid_to_idx = {int(iid): idx for idx, iid in enumerate(item_ids)}
+    scores_list: list[float] = []
+    for user_id, rec_ids in ranked_by_user.items():
+        if user_id not in uid_to_idx:
+            continue
+        user_idx = uid_to_idx[user_id]
+        user_row = matrix.getrow(user_idx)
+        rated = set(user_row.indices)
+        for iid in rec_ids[:k]:
+            if iid not in iid_to_idx:
+                continue
+            item_idx = iid_to_idx[iid]
+            if item_idx in rated:
+                continue
+            pop = popularities[item_idx]
+            # relevance proxy: CF score via matrix factorisation
+            vec_u = np.asarray(user_row.todense()).flatten()
+            vec_i = np.asarray(matrix.getcol(item_idx).todense()).flatten()
+            sim = float(np.dot(vec_u, vec_i))
+            scores_list.append(sim * (1.0 - pop))
+    return round(float(np.mean(scores_list)), 4) if scores_list else 0.0
