@@ -247,6 +247,19 @@ def build_evidence(
                     lines.append(_fmt(entry, detail=f"similarity {entry.score}"))
                 absorb(widened_items, "genre_widened")
 
+    # preference memory
+    pref_summary = deps.memory.get_preference_summary(uid)
+    if pref_summary:
+        lines.append("User preference history (from past feedback):")
+        lines.append(pref_summary)
+
+    # session context
+    if hasattr(deps, "session") and deps.session is not None:
+        session_text = deps.session.session_summary()
+        if session_text:
+            lines.append("Current session context:")
+            lines.append(session_text)
+
     text = "\n".join(lines)
     max_chars = budget_tokens * 4
     if len(text) > max_chars:

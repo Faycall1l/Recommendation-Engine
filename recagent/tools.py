@@ -12,6 +12,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from recagent.memory import UserMemory
+from recagent.session import SessionMemory
 from recagent.state import load_state
 
 
@@ -52,7 +53,7 @@ class ToolRegistry:
 
     MAX_N = 1000
 
-    def __init__(self, state: dict[str, Any], *, memory: UserMemory | None = None):
+    def __init__(self, state: dict[str, Any], *, memory: UserMemory | None = None, session: SessionMemory | None = None):
         self.state = state
         self.model = state["model"]
         self.matrix = state["matrix"]
@@ -62,6 +63,7 @@ class ToolRegistry:
         self.item_ids = state["item_ids"]
         self.items_meta = state["items_meta"]
         self.memory = memory or UserMemory()
+        self.session = session or SessionMemory()
 
     # -- validation helpers ---------------------------------------------------
 

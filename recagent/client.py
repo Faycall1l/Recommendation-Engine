@@ -25,6 +25,7 @@ from recagent.agent import RecAgent, build_evidence, build_plan
 from recagent.config import LLMConfig, load_llm_config
 from recagent.explain import Explanation, RecExplainer, explain_recommendation
 from recagent.memory import UserMemory
+from recagent.session import SessionMemory
 from recagent.state import load_state
 from recagent.tools import ToolRegistry
 from recagent.utils import usage_summary
@@ -163,7 +164,8 @@ class RecClient:
             Path(feedback_path) if feedback_path else Path(str(artifacts)) / "feedback.jsonl"
         )
         self.memory = UserMemory(Path(str(artifacts)) / "memory.json")
-        self.deps = ToolRegistry(self.state, memory=self.memory)
+        self.session = SessionMemory()
+        self.deps = ToolRegistry(self.state, memory=self.memory, session=self.session)
         # auto-ingest any existing feedback into memory buckets
         self.memory.ingest_feedback(self.feedback_path)
         config = llm_config or load_llm_config()
@@ -317,6 +319,7 @@ class RecClient:
             latency_ms=trace.latency_ms if trace else None,
             reflection_applied=trace.refinement_applied if trace else None,
         )
+        self.session.record_recommendation(request, [r.item_id for r in resp.items])
         logger.info(
             "recommend user_id=%d k=%d items=%d latency_ms=%.1f reflection=%s",
             user_id, k, len(resp.items), resp.latency_ms or 0, resp.reflection_applied,
@@ -332,7 +335,7 @@ class RecClient:
             return await asyncio.to_thread(self.recommend, user_id, k, filters)
         result = await self._arun_with_retry(request, request_id=request_id)
         trace = getattr(result, "trace", None)
-        return RecommendResponse(
+        resp = RecommendResponse(
             user_id=user_id,
             k=k,
             items=self._from_agent(result, user_id),
@@ -340,6 +343,8 @@ class RecClient:
             latency_ms=trace.latency_ms if trace else None,
             reflection_applied=trace.refinement_applied if trace else None,
         )
+        self.session.record_recommendation(request, [r.item_id for r in resp.items])
+        return resp
 
     def chat(
         self, message: str, *, user_id: int | None = None, k: int = 5
