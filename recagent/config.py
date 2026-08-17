@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import os
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field, field_validator
+
+load_dotenv()
 
 _BASE_URL_DEFAULT = "http://localhost:8000/v1"
 _MODEL_DEFAULT = "Gemma-4-31B-it"
