@@ -403,12 +403,25 @@ class RecAgent:
             ),
         )
 
-    async def arun(self, request: str, deps: ToolRegistry) -> Any:
+    async def arun(self, request: str, deps: ToolRegistry, *, request_id: str = "") -> Any:
         """Plan, gather evidence, reason, optionally reflect; returns a result with ``.output``."""
+        import time
+
         from pydantic_ai.usage import UsageLimits
 
+        trace = ReasoningTrace(request_id=request_id)
+        t0 = time.monotonic()
+
         plan = build_plan(request, deps)
+        trace.plan_user_id = plan.get("user_id")
+        trace.plan_k = plan.get("k", 5)
+        trace.plan_constraint = plan.get("constraint")
+
         evidence, meta, evidence_sections = build_evidence(plan, deps)
+        trace.evidence_text = evidence
+        trace.evidence_sections = evidence_sections
+        trace.evidence_meta = meta
+
         prompt = (
             f"{evidence}\n\n"
             f"{request}\n"
@@ -419,6 +432,7 @@ class RecAgent:
             usage_limits=UsageLimits(request_limit=self.max_requests),
         )
         raw_items = result.output.items if result.output else []
+        trace.raw_llm_output = str(raw_items)
 
         if self.reflect:
             reflection = _reflect_on_ranking(
@@ -427,6 +441,7 @@ class RecAgent:
                 meta=meta,
                 evidence_sections=evidence_sections,
             )
+            trace.reflection_issues = list(reflection.issues)
             if reflection.needs_refinement:
                 feedback = "\n".join(
                     f"Issue {i + 1}: {issue}"
@@ -445,9 +460,18 @@ class RecAgent:
                     usage_limits=UsageLimits(request_limit=self.max_requests),
                 )
                 raw_items = result.output.items if result.output else []
+                trace.refinement_applied = True
+                trace.raw_llm_output = str(raw_items)
 
         items = _clean_items(raw_items, plan=plan, meta=meta)
-        return dataclasses.replace(result, output=RankedItems(items=items))
+        trace.cleaned_item_ids = [i.item_id for i in items]
+        trace.diversity_applied = len(items) > 1
+        trace.latency_ms = round((time.monotonic() - t0) * 1000, 1)
+        trace.usage = usage_summary(result)
+
+        out = dataclasses.replace(result, output=RankedItems(items=items))
+        out.trace = trace  # type: ignore[attr-defined]
+        return out
 
     def run(self, request: str, deps: ToolRegistry) -> Any:
         """Sync convenience wrapper for the CLI."""
