@@ -711,3 +711,33 @@ def serendipity(
             sim = float(np.dot(vec_u, vec_i))
             scores_list.append(sim * (1.0 - pop))
     return round(float(np.mean(scores_list)), 4) if scores_list else 0.0
+
+
+def demographic_parity(
+    ranked_by_user: dict[int, list[int]],
+    state: dict,
+    k: int = 10,
+) -> dict[str, float]:
+    """Genre demographic parity: max share − min share across all genres.
+
+    Measures whether the recommender disproportionately recommends items from
+    certain genres. A lower value means more balanced genre representation.
+    Returns {"max_share", "min_share", "disparity"} where
+    disparity = max_share − min_share.
+    """
+    meta = state["items_meta"]
+    genre_counts: dict[str, int] = {}
+    total = 0
+    for item_ids_list in ranked_by_user.values():
+        for iid in item_ids_list[:k]:
+            total += 1
+            for g in meta.get(iid, {}).get("genres", []):
+                genre_counts[g] = genre_counts.get(g, 0) + 1
+    if not genre_counts or total == 0:
+        return {"max_share": 0.0, "min_share": 0.0, "disparity": 0.0}
+    shares = [c / total for c in genre_counts.values()]
+    return {
+        "max_share": round(max(shares), 4),
+        "min_share": round(min(shares), 4),
+        "disparity": round(max(shares) - min(shares), 4),
+    }
