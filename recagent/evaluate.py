@@ -612,3 +612,33 @@ def average_novelty(
             if iid in iid_to_neglog:
                 novelties.append(iid_to_neglog[iid])
     return round(float(np.mean(novelties)), 4) if novelties else 0.0
+
+
+def catalog_coverage(
+    ranked_by_user: dict[int, list[int]],
+    state: dict,
+    k: int = 10,
+) -> dict[str, float]:
+    """Catalog coverage and Gini index of item exposure.
+
+    Returns:
+        coverage: fraction of all items that appear in at least one top-k list.
+        gini: Gini coefficient over item exposure counts (0 = perfectly equal,
+              1 = all exposure on one item).
+    """
+    item_ids = state["item_ids"]
+    n_items = len(item_ids)
+    exposure: dict[int, int] = {int(iid): 0 for iid in item_ids}
+    for item_ids_list in ranked_by_user.values():
+        for iid in item_ids_list[:k]:
+            if iid in exposure:
+                exposure[iid] += 1
+    counts = np.array(list(exposure.values()), dtype=float)
+    covered = int(np.sum(counts > 0))
+    cov = round(covered / n_items, 4) if n_items else 0.0
+    # Gini
+    sorted_counts = np.sort(counts)
+    n = len(sorted_counts)
+    index = np.arange(1, n + 1)
+    gini = float(1.0 - 2.0 * np.sum(sorted_counts * (n - index + 0.5)) / (n * sorted_counts.sum())) if sorted_counts.sum() > 0 else 0.0
+    return {"coverage": cov, "gini": round(gini, 4)}
