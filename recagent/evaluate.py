@@ -555,3 +555,32 @@ def save_report(report: dict, path: str | Path) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2))
+
+
+# ── Beyond-accuracy metrics ──────────────────────────────────────────
+
+
+def intra_list_diversity(
+    ranked_by_user: dict[int, list[int]],
+    state: dict,
+    k: int = 10,
+) -> float:
+    """Average intra-list diversity (1 − mean Jaccard over all user lists).
+
+    For each user's top-k list, compute pairwise Jaccard distance between
+    item genre sets, then average across all pairs and all users.
+    Returns a value in [0, 1] — higher means more diverse lists.
+    """
+    meta = state["items_meta"]
+    jaccards: list[float] = []
+    for item_ids in ranked_by_user.values():
+        top = item_ids[:k]
+        if len(top) < 2:
+            continue
+        genre_sets = [set(meta.get(iid, {}).get("genres", [])) for iid in top]
+        for a in range(len(genre_sets)):
+            for b in range(a + 1, len(genre_sets)):
+                union = genre_sets[a] | genre_sets[b]
+                inter = genre_sets[a] & genre_sets[b]
+                jaccards.append(1.0 - len(inter) / len(union) if union else 0.0)
+    return round(float(np.mean(jaccards)), 4) if jaccards else 0.0
