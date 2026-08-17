@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 from pydantic import BaseModel, Field
 
+from recagent.memory import UserMemory
 from recagent.state import load_state
 
 
@@ -51,7 +52,7 @@ class ToolRegistry:
 
     MAX_N = 1000
 
-    def __init__(self, state: dict[str, Any]):
+    def __init__(self, state: dict[str, Any], *, memory: UserMemory | None = None):
         self.state = state
         self.model = state["model"]
         self.matrix = state["matrix"]
@@ -60,6 +61,7 @@ class ToolRegistry:
         self.user_ids = state["user_ids"]
         self.item_ids = state["item_ids"]
         self.items_meta = state["items_meta"]
+        self.memory = memory or UserMemory()
 
     # -- validation helpers ---------------------------------------------------
 
@@ -243,3 +245,29 @@ class ToolRegistry:
                 for idx in top
             ]
         )
+
+    # -- memory tools --------------------------------------------------------
+
+    def save_preference(
+        self, user_id: int, category: str, item_ids: list[int], note: str = ""
+    ) -> dict[str, Any]:
+        """Save item_ids into a named preference bucket for a user.
+
+        Categories: loved, disliked, comfort, discovery, mood:<name>,
+        context:<name>, genre:<name>.  Deduplicates automatically.
+        """
+        added = self.memory.save_preference(
+            user_id, category, item_ids, source="explicit", note=note
+        )
+        return {"added": added, "category": category, "total_in_bucket": len(
+            self.memory.get_preferences(user_id, category).get(category, [])
+        )}
+
+    def get_preferences(self, user_id: int, category: str = "") -> dict[str, list[int]]:
+        """Retrieve preference buckets for a user. Empty category returns all."""
+        cat = category if category else None
+        return self.memory.get_preferences(user_id, category=cat)
+
+    def get_preference_summary(self, user_id: int) -> str:
+        """Human-readable summary of user's preference buckets for evidence."""
+        return self.memory.get_preference_summary(user_id)
