@@ -56,9 +56,12 @@ mean when no similar item is in the profile.
 
 1. `build_plan` — parse `user_id`, `k`, and any hard constraints (e.g. genre).
 2. `build_evidence` — deterministic `ToolRegistry` calls: user profile,
-   collaborative-filtering candidates, item metadata, and — for cold-start
+   collaborative-filtering candidates, item metadata, **preference history**
+   (from past feedback), **current session context**, and — for cold-start
    users or rare genres — popularity priors and `similar_items` chains.
-3. one structured-output LLM call emits a ranked `RankedItems` list.
+3. one structured-output LLM call emits a ranked `RankedItems` list with
+   optional **tags** (comfort, discovery, rewatch, mood-light, mood-dark,
+   context-late-night).
 4. **reflection loop** (opt-in `reflect=True`) — deterministic post-ranking
    checks (too few items, constraint violations, evidence coverage, genre
    diversity); a second targeted LLM call fixes issues when found.
@@ -66,6 +69,34 @@ mean when no similar item is in the profile.
    genre similarity prevents the top-k from being all-one-genre.
 6. `_clean_items` guardrails drop hallucinations, constraint violations and
    duplicates, capping the list at `k`.
+
+### Memory
+
+Two memory layers feed the agent's reasoning:
+
+- **UserMemory** (`recagent/memory.py`) — persistent JSON-backed preference
+  buckets per user. Categories include `loved`, `disliked`, `comfort`,
+  `discovery`, `mood:<name>`, `context:<name>`, `genre:<name>`.
+  Populated from explicit user feedback (`save_preference`) or bulk-imported
+  from `feedback.jsonl` at startup. The summary appears in the evidence block
+  so the agent reasons about past taste.
+
+- **SessionMemory** (`recagent/session.py`) — in-conversation context tracking.
+  Records what was recommended, liked, and disliked within the current session.
+  Prevents repetition and enables follow-up requests ("more like that").
+  Not persisted to disk — lives only for the session lifetime.
+
+### Mood, context, and discovery
+
+The enhanced SYSTEM_PROMPT teaches the agent to handle natural-language
+modifiers:
+
+- **mood requests** — "something light", "late night watch" → the agent
+  interprets intent and adjusts ranking.
+- **discovery requests** — "surprise me", "something different" → items
+  outside the user's dominant genres but still relevant.
+- **memory-aware** — avoids items similar to disliked ones, leans toward
+  genres in the loved bucket, varies from recent recommendations.
 
 This sidesteps vLLM's flaky in-loop tool template (repeated identical calls,
 empty parts) while keeping the reasoning signal.
@@ -87,6 +118,35 @@ python -m recagent.cli explain 196 64            # why an item for a user
 python -m recagent.cli train --cf als            # switch engines
 python -m recagent.cli eval --all-cf --sample 100 --agent
 python -m recagent.cli serve --port 8000         # REST gateway (docs at /docs)
+```
+
+### SDK with memory
+
+```python
+from recagent.client import RecClient
+
+client = RecClient()
+
+# save user preferences
+client.deps.save_preference(196, "loved", [64, 12], note="favourites")
+
+# recommend — agent sees preference history + session context
+resp = client.recommend(196, k=5)
+print(resp.items[0].title, resp.items[0].tags)
+
+# follow-up — session memory prevents repeats
+resp2 = client.recommend(196, k=3)
+print(client.session.session_summary())
+```
+
+### REST endpoints (memory)
+
+```
+POST /save_preference   {"user_id": 196, "category": "loved", "item_ids": [64]}
+POST /get_preferences   {"user_id": 196}
+POST /get_preference_summary  {"user_id": 196}
+POST /ingest_feedback   {"feedback_path": "artifacts/feedback.jsonl"}
+POST /recommend         {"user_id": 196, "k": 5, "filters": {"mood": "light"}}
 ```
 
 LLM config lives in `.env` (`ATHAR_AGENT__*`, see `.env.example`); without it
