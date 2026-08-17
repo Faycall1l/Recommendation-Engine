@@ -308,7 +308,9 @@ class RecClient:
                     )
                     for e in self.deps.recommend(user_id, n=k).items
                 ]
-            return RecommendResponse(user_id=user_id, k=k, items=items)
+            resp = RecommendResponse(user_id=user_id, k=k, items=items)
+            self.session.record_recommendation(request, [r.item_id for r in resp.items])
+            return resp
         result = self._run_with_retry(request, request_id=request_id)
         trace = getattr(result, "trace", None)
         resp = RecommendResponse(

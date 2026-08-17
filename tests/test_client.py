@@ -421,3 +421,28 @@ def test_client_async_explain_contrastive(tmp_path):
     resp = asyncio.run(client.aexplain_recommendation(1, 101, recommended_ids={101}))
     assert resp.explanation.contrast is not None
     assert resp.explanation.contrast.alt_item_id in (100, 104)
+
+
+def test_tags_flows_through_to_recommendation():
+    deps = ToolRegistry(_user_cf_state())
+    ranked = RankedItems(items=[
+        RankedItem(item_id=10, reason="test", tags=["comfort", "rewatch"]),
+        RankedItem(item_id=11, reason="test2", tags=["discovery"]),
+        RankedItem(item_id=12, reason="test3"),
+    ])
+    recs = _to_recommendations(ranked, deps, scores={10: 0.9, 11: 0.7, 12: 0.5})
+    assert recs[0].tags == ["comfort", "rewatch"]
+    assert recs[1].tags == ["discovery"]
+    assert recs[2].tags == []
+
+
+def test_session_recorded_on_recommend(tmp_path):
+    client = RecClient(
+        state=_user_cf_state(),
+        llm_config=DISABLED,
+        feedback_path=tmp_path / "f.jsonl",
+    )
+    resp = client.recommend(1, k=2)
+    assert len(resp.items) > 0
+    assert client.session.turn_count == 1
+    assert len(client.session.recently_recommended()) > 0
