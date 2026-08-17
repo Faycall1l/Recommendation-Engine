@@ -139,7 +139,7 @@ def _fmt(entry: Any, detail: str | None = None) -> str:
 
 
 def build_evidence(
-    plan: dict[str, Any], deps: ToolRegistry
+    plan: dict[str, Any], deps: ToolRegistry, *, budget_tokens: int = 4000
 ) -> tuple[str, dict[int, set[str]], dict[str, list[int]]]:
     """Gather evidence through the tools; return (text block, item genre map, evidence sections).
 
@@ -151,6 +151,9 @@ def build_evidence(
 
     The third return value maps section names to the item_ids they contributed,
     used by the reflection step to check evidence coverage.
+
+    ``budget_tokens`` caps the evidence text at roughly that many tokens
+    (1 token ~ 4 chars) to avoid flooding the LLM context window.
     """
     meta: dict[int, set[str]] = {}
     sections: dict[str, list[int]] = {}
@@ -226,7 +229,11 @@ def build_evidence(
                     lines.append(_fmt(entry, detail=f"similarity {entry.score}"))
                 absorb(widened_items, "genre_widened")
 
-    return "\n".join(lines), meta, sections
+    text = "\n".join(lines)
+    max_chars = budget_tokens * 4
+    if len(text) > max_chars:
+        text = text[:max_chars] + "\n[...evidence truncated to budget...]"
+    return text, meta, sections
 
 
 def _clean_items(
@@ -382,11 +389,13 @@ class RecAgent:
         temperature: float = 0.1,
         max_requests: int = 12,
         reflect: bool = True,
+        evidence_budget_tokens: int = 4000,
     ):
         self.config = config
         self.state = state
         self.max_requests = max_requests
         self.reflect = reflect
+        self.evidence_budget_tokens = evidence_budget_tokens
         model = OpenAIChatModel(
             config.model,
             provider=OpenAIProvider(base_url=config.base_url, api_key=config.api_key),
@@ -417,7 +426,9 @@ class RecAgent:
         trace.plan_k = plan.get("k", 5)
         trace.plan_constraint = plan.get("constraint")
 
-        evidence, meta, evidence_sections = build_evidence(plan, deps)
+        evidence, meta, evidence_sections = build_evidence(
+            plan, deps, budget_tokens=self.evidence_budget_tokens
+        )
         trace.evidence_text = evidence
         trace.evidence_sections = evidence_sections
         trace.evidence_meta = meta
