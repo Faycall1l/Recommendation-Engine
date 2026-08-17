@@ -4,16 +4,23 @@ import scipy.sparse as sp
 
 from recagent.cf import build_cf
 from recagent.evaluate import (
+    ConstraintResult,
     aligned_rank_arrays,
+    average_novelty,
+    catalog_coverage,
     cf_baseline,
     cv_rating_eval_from_arrays,
+    demographic_parity,
     genre_precision,
     head_item_ids,
     hits_from_ranks,
+    intra_list_diversity,
+    long_tail_share,
     loo_ranking_eval_from_arrays,
     mean_metrics,
     paired_bootstrap,
     rating_metrics,
+    serendipity,
 )
 from tests.test_tools import build_state
 
@@ -352,3 +359,89 @@ def test_build_test_items_cache_roundtrip(tmp_path):
     # read back as build_test_items does
     loaded = {int(k): int(v) for k, v in json.loads(cache_file.read_text()).items()}
     assert loaded == fake_result
+
+
+# ── Beyond-accuracy metric tests ──────────────────────────────────────
+
+
+def test_intra_list_diversity_identical_genres():
+    state = build_state(n_users=5, n_items=10)
+    # All items have the same genre pattern (Action/Comedy/Drama cycling)
+    ranked = {1: [1, 2, 3, 4, 5]}
+    ild = intra_list_diversity(ranked, state, k=5)
+    assert 0.0 <= ild <= 1.0
+
+
+def test_intra_list_diversity_empty():
+    state = build_state()
+    assert intra_list_diversity({}, state) == 0.0
+
+
+def test_average_novelty_positive():
+    state = build_state(n_users=10, n_items=20)
+    ranked = {1: [1, 2, 3], 2: [4, 5, 6]}
+    nov = average_novelty(ranked, state, k=3)
+    assert nov > 0.0  # items with lower popularity have positive novelty
+
+
+def test_average_novelty_empty():
+    state = build_state()
+    assert average_novelty({}, state) == 0.0
+
+
+def test_catalog_coverage():
+    state = build_state(n_users=10, n_items=20)
+    ranked = {1: list(range(1, 11)), 2: list(range(11, 21))}
+    result = catalog_coverage(ranked, state, k=10)
+    assert 0.0 <= result["coverage"] <= 1.0
+    assert 0.0 <= result["gini"] <= 1.0
+
+
+def test_catalog_coverage_empty():
+    state = build_state()
+    result = catalog_coverage({}, state)
+    assert result["coverage"] == 0.0
+
+
+def test_long_tail_share():
+    state = build_state(n_users=10, n_items=20)
+    ranked = {1: [1, 2, 3, 4, 5]}
+    lts = long_tail_share(ranked, state, k=5, head_fraction=0.2)
+    assert 0.0 <= lts <= 1.0
+
+
+def test_serendipity():
+    state = build_state(n_users=10, n_items=20)
+    ranked = {101: [1, 2, 3]}
+    test_items = {101: 1}
+    ser = serendipity(ranked, test_items, state, k=3)
+    assert isinstance(ser, float)
+    assert ser >= 0.0
+
+
+def test_demographic_parity():
+    state = build_state(n_users=10, n_items=20)
+    ranked = {1: [1, 2, 3, 4, 5]}
+    result = demographic_parity(ranked, state, k=5)
+    assert "max_share" in result
+    assert "min_share" in result
+    assert "disparity" in result
+    assert result["disparity"] >= 0.0
+
+
+def test_demographic_parity_empty():
+    result = demographic_parity({}, {"items_meta": {}})
+    assert result["disparity"] == 0.0
+
+
+def test_constraint_result_dataclass():
+    cr = ConstraintResult(
+        constraint="Sci-Fi only",
+        agent_lists={1: [10, 20]},
+        cf_lists={1: [30, 40]},
+        users=[1],
+        compliance_rate=0.8,
+    )
+    assert cr.constraint == "Sci-Fi only"
+    assert cr.compliance_rate == 0.8
+    assert cr.agent_genre_precision == {}

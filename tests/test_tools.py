@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import scipy.sparse as sp
 
 from recagent.model import Recommender
@@ -118,3 +119,68 @@ def test_trending_returns_popularity_prior():
         assert entry.rating_count > 0
     counts = [e.score for e in out.items]
     assert counts == sorted(counts, reverse=True)
+
+
+# ── RestrictedUnpickler tests ────────────────────────────────────────
+
+
+def test_restricted_unpickler_allows_numpy():
+    import io
+    import pickle
+
+    from recagent.state import RestrictedUnpickler
+
+    obj = {"key": "value"}
+    data = pickle.dumps(obj)
+    loaded = RestrictedUnpickler(io.BytesIO(data)).load()
+    assert loaded == obj
+
+
+def test_rejected_unpickler_blocks_code_execution():
+    """Verify that RestrictedUnpickler blocks os.system."""
+    import io
+    import pickle
+
+    from recagent.state import RestrictedUnpickler
+
+    data = b"cos\nsystem\n(S'echo pwned'\ntR."
+    with pytest.raises(pickle.UnpicklingError, match="not allowed"):
+        RestrictedUnpickler(io.BytesIO(data)).load()
+
+
+# ── ToolRegistry input validation tests ──────────────────────────────
+
+
+def test_tool_registry_rejects_negative_user_id():
+    state = build_state()
+    registry = ToolRegistry(state)
+    with pytest.raises((ValueError, KeyError)):
+        registry.recommend(-1)
+
+
+def test_tool_registry_rejects_negative_item_id():
+    state = build_state()
+    registry = ToolRegistry(state)
+    with pytest.raises((ValueError, KeyError)):
+        registry.similar_items(-1)
+
+
+def test_tool_registry_rejects_zero_k():
+    state = build_state()
+    registry = ToolRegistry(state)
+    with pytest.raises((ValueError, KeyError)):
+        registry.recommend(101, n=0)
+
+
+def test_tool_registry_rejects_k_over_max():
+    state = build_state()
+    registry = ToolRegistry(state)
+    with pytest.raises((ValueError, KeyError)):
+        registry.recommend(101, n=1001)
+
+
+def test_tool_registry_rejects_non_int_user_id():
+    state = build_state()
+    registry = ToolRegistry(state)
+    with pytest.raises((TypeError, KeyError)):
+        registry.recommend("not_an_int")  # type: ignore[arg-type]

@@ -1,8 +1,11 @@
 import typing
 
+import pytest
+
 from recagent.agent import (
     RankedItem,
     RankedItems,
+    ReasoningTrace,
     RecAgent,
     _clean_items,
     _jaccard,
@@ -11,10 +14,10 @@ from recagent.agent import (
     build_plan,
     detect_genre,
     mmr_rerank,
-    usage_summary,
 )
-from recagent.config import LLMConfig
+from recagent.config import LLMConfig, RecAgentConfig
 from recagent.tools import ToolRegistry
+from recagent.utils import usage_summary
 from tests.test_tools import build_state
 
 
@@ -295,3 +298,68 @@ def test_clean_items_diversity_reorders():
     ids = [it.item_id for it in kept]
     # diverse item (Comedy) should be promoted ahead of duplicate genre
     assert ids.index(3) < ids.index(2)
+
+
+# ── ReasoningTrace tests ────────────────────────────────────────────
+
+
+def test_reasoning_trace_defaults():
+    t = ReasoningTrace()
+    assert t.request_id == ""
+    assert t.plan_user_id is None
+    assert t.raw_llm_output == ""
+    assert t.reflection_issues == []
+    assert t.refinement_applied is False
+    assert t.latency_ms == 0.0
+
+
+def test_reasoning_trace_with_values():
+    t = ReasoningTrace(
+        request_id="req-123",
+        plan_user_id=42,
+        plan_k=5,
+        cleaned_item_ids=[1, 2, 3],
+        latency_ms=150.5,
+    )
+    assert t.request_id == "req-123"
+    assert t.plan_user_id == 42
+    assert t.cleaned_item_ids == [1, 2, 3]
+
+
+# ── RecAgentConfig tests ────────────────────────────────────────────
+
+
+def test_rec_agent_config_defaults():
+    cfg = RecAgentConfig()
+    assert cfg.temperature == 0.1
+    assert cfg.max_requests == 12
+    assert cfg.reflect is True
+    assert cfg.diversity is True
+    assert cfg.lambda_param == 0.5
+    assert cfg.evidence_budget_tokens == 4000
+
+
+def test_rec_agent_config_custom():
+    cfg = RecAgentConfig(temperature=0.5, max_requests=20, reflect=False)
+    assert cfg.temperature == 0.5
+    assert cfg.max_requests == 20
+    assert cfg.reflect is False
+
+
+def test_llm_config_requires_api_key_when_enabled():
+    with pytest.raises(ValueError, match="api_key"):
+        LLMConfig(enabled=True, base_url="http://localhost:9/v1", api_key="", model="x")
+
+
+def test_llm_config_allows_empty_api_key_when_disabled():
+    cfg = LLMConfig(enabled=False, base_url="http://localhost:9/v1", api_key="", model="x")
+    assert cfg.enabled is False
+
+
+def test_build_evidence_budget_truncates():
+    deps = ToolRegistry(build_state())
+    text, _, _ = build_evidence(
+        {"user_id": 101, "k": 5, "genre": None}, deps, budget_tokens=50
+    )
+    assert len(text) <= 50 * 4 + 100  # some slack for the truncation marker
+    assert "[...evidence truncated" in text
