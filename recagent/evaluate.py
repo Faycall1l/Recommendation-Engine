@@ -8,6 +8,7 @@ the reasoning+tools stage adds signal beyond ALS alone.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 from collections import Counter
 from collections.abc import Sequence
@@ -21,6 +22,19 @@ from recagent.data import encode, leave_one_out, loaders, split_ratings
 from recagent.tools import ToolRegistry
 
 KS = (1, 3, 5, 10)
+
+
+@dataclasses.dataclass
+class ConstraintResult:
+    """Result of a constraint evaluation run."""
+
+    constraint: str
+    agent_lists: dict[int, list[int]]
+    cf_lists: dict[int, list[int]]
+    users: list[int]
+    compliance_rate: float = 0.0
+    agent_genre_precision: dict[str, float] = dataclasses.field(default_factory=dict)
+    cf_genre_precision: dict[str, float] = dataclasses.field(default_factory=dict)
 
 
 def rating_metrics(actual: np.ndarray, predicted: np.ndarray) -> dict:
