@@ -584,3 +584,31 @@ def intra_list_diversity(
                 inter = genre_sets[a] & genre_sets[b]
                 jaccards.append(1.0 - len(inter) / len(union) if union else 0.0)
     return round(float(np.mean(jaccards)), 4) if jaccards else 0.0
+
+
+def average_novelty(
+    ranked_by_user: dict[int, list[int]],
+    state: dict,
+    k: int = 10,
+) -> float:
+    """Average self-information novelty across all top-k lists.
+
+    Novelty(item) = −log2(popularity), where popularity is the fraction of
+    users who interacted with the item. Higher means the system surfaces
+    less popular (more novel) items. Returns bits (log base 2).
+    """
+    matrix = state["matrix"]
+    n_users = matrix.shape[0]
+    total_pop = np.array(matrix.getnnz(axis=0)).flatten()
+    popularities = total_pop / n_users
+    # avoid log(0): clamp to 1/(2*n_users)
+    popularities = np.clip(popularities, 1.0 / (2 * n_users), 1.0)
+    neg_log_pop = -np.log2(popularities)
+    item_ids = state["item_ids"]
+    iid_to_neglog = {int(iid): float(neg_log_pop[idx]) for idx, iid in enumerate(item_ids)}
+    novelties: list[float] = []
+    for item_ids_list in ranked_by_user.values():
+        for iid in item_ids_list[:k]:
+            if iid in iid_to_neglog:
+                novelties.append(iid_to_neglog[iid])
+    return round(float(np.mean(novelties)), 4) if novelties else 0.0
